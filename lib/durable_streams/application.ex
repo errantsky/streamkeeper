@@ -1,19 +1,32 @@
 defmodule DurableStreams.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
-  @moduledoc false
+  @moduledoc """
+  OTP Application for DurableStreams.
+
+  Starts the supervision tree with:
+  - Phoenix.PubSub for live update notifications
+  - Registry for stream process lookup
+  - ETS storage backend
+  - DynamicSupervisor for stream processes
+  """
 
   use Application
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     children = [
-      # Starts a worker by calling: DurableStreams.Worker.start_link(arg)
-      # {DurableStreams.Worker, arg}
+      # PubSub for broadcasting stream updates to subscribers
+      {Phoenix.PubSub, name: DurableStreams.PubSub},
+
+      # Registry for looking up stream processes by ID
+      {Registry, keys: :unique, name: DurableStreams.Registry},
+
+      # ETS storage backend (manages the ETS tables)
+      DurableStreams.Storage.ETS,
+
+      # DynamicSupervisor for spawning stream GenServers
+      {DynamicSupervisor, name: DurableStreams.StreamSupervisor, strategy: :one_for_one}
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
     opts = [strategy: :one_for_one, name: DurableStreams.Supervisor]
     Supervisor.start_link(children, opts)
   end
