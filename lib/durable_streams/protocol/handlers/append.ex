@@ -24,17 +24,21 @@ defmodule DurableStreams.Protocol.Handlers.Append do
         {:ok, meta} ->
           # Check content-type matches
           if Stream.content_type_matches?(meta.content_type, content_type) do
-            {:ok, body, conn} = read_body(conn)
+            case safe_read_body(conn) do
+              {:ok, body, conn} ->
+                # Reject empty body
+                if byte_size(body) == 0 do
+                  send_error(conn, 400, "Request body cannot be empty")
+                else
+                  if Stream.json_mode?(meta) do
+                    handle_json_append(conn, stream_id, body, seq)
+                  else
+                    handle_binary_append(conn, stream_id, body, seq)
+                  end
+                end
 
-            # Reject empty body
-            if byte_size(body) == 0 do
-              send_error(conn, 400, "Request body cannot be empty")
-            else
-              if Stream.json_mode?(meta) do
-                handle_json_append(conn, stream_id, body, seq)
-              else
-                handle_binary_append(conn, stream_id, body, seq)
-              end
+              {:error, :too_large, conn} ->
+                send_error(conn, 413, "Payload too large")
             end
           else
             send_error(conn, 409, "Content-Type mismatch")
@@ -140,6 +144,32 @@ defmodule DurableStreams.Protocol.Handlers.Append do
   # Increment a string seq value by appending the index
   defp increment_seq(base_seq, 0), do: base_seq
   defp increment_seq(base_seq, index), do: "#{base_seq}.#{index}"
+
+  # Safely read body, catching errors from large payloads
+  defp safe_read_body(conn) do
+    # Read body with a generous limit (100MB)
+    case read_body(conn, length: 100_000_000, read_length: 1_000_000) do
+      {:ok, body, conn} ->
+        {:ok, body, conn}
+      {:more, _partial, conn} ->
+        # Body too large - read and discard remaining then return error
+        drain_body(conn)
+        {:error, :too_large, conn}
+      {:error, _reason} ->
+        {:error, :too_large, conn}
+    end
+  rescue
+    _ -> {:error, :too_large, conn}
+  end
+
+  defp drain_body(conn) do
+    case read_body(conn, length: 100_000_000, read_length: 1_000_000) do
+      {:more, _, conn} -> drain_body(conn)
+      _ -> :ok
+    end
+  rescue
+    _ -> :ok
+  end
 
   defp send_error(conn, status, message) do
     conn

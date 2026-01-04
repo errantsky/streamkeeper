@@ -16,12 +16,20 @@ defmodule DurableStreams.Offset do
   @type t :: String.t()
 
   @start "-1"
+  @zero "0000000000000000-0000-0000"
 
   @doc """
   Returns the start offset, which represents the beginning of a stream.
   """
   @spec start() :: t()
   def start, do: @start
+
+  @doc """
+  Returns the zero offset - the earliest possible real offset.
+  Used for SSE when the stream is empty and we need a non-sentinel value.
+  """
+  @spec zero() :: t()
+  def zero, do: @zero
 
   @doc """
   Returns true if the given offset is the start offset.

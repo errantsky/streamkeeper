@@ -84,8 +84,10 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   defp handle_binary_read(conn, stream_id, offset, live, timeout, meta) do
     case StreamManager.read(stream_id, offset, live: live, timeout: timeout) do
       {:ok, %{data: <<>>} = result} ->
+        # For empty streams, use zero offset instead of -1
+        actual_offset = if Offset.start?(result.offset), do: Offset.zero(), else: result.offset
         conn
-        |> put_resp_header("stream-next-offset", result.offset)
+        |> put_resp_header("stream-next-offset", actual_offset)
         |> put_resp_header("stream-up-to-date", "true")
         |> maybe_put_cursor_header(live, stream_id)
         |> maybe_put_closed_header(result.closed)
@@ -120,8 +122,10 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   defp handle_json_read(conn, stream_id, offset, live, timeout, _meta) do
     case StreamManager.read_messages(stream_id, offset, live: live, timeout: timeout) do
       {:ok, %{messages: []} = result} ->
+        # For empty streams, use zero offset instead of -1
+        actual_offset = if Offset.start?(result.offset), do: Offset.zero(), else: result.offset
         conn
-        |> put_resp_header("stream-next-offset", result.offset)
+        |> put_resp_header("stream-next-offset", actual_offset)
         |> put_resp_header("stream-up-to-date", "true")
         |> maybe_put_cursor_header(live, stream_id)
         |> maybe_put_closed_header(result.closed)
@@ -164,7 +168,9 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   defp maybe_put_up_to_date_header(conn, false), do: put_resp_header(conn, "stream-up-to-date", "true")
 
   defp maybe_put_cursor_header(conn, true, stream_id) do
-    cursor = generate_cursor(stream_id)
+    # Check if client sent a cursor (for jitter handling) - can be in header OR query param
+    client_cursor = get_req_header(conn, "stream-cursor") |> List.first() || conn.params["cursor"]
+    cursor = generate_cursor_with_jitter(stream_id, client_cursor)
     put_resp_header(conn, "stream-cursor", cursor)
   end
   defp maybe_put_cursor_header(conn, _, _), do: conn
@@ -177,10 +183,31 @@ defmodule DurableStreams.Protocol.Handlers.Read do
     "\"#{String.slice(hash, 0, 16)}\""
   end
 
-  defp generate_cursor(stream_id) do
-    timestamp = System.system_time(:millisecond)
-    random = :rand.uniform(0xFFFF)
-    Base.encode64("#{stream_id}:#{timestamp}:#{random}")
+  defp generate_cursor_with_jitter(_stream_id, nil) do
+    generate_cursor()
+  end
+
+  defp generate_cursor_with_jitter(_stream_id, client_cursor) do
+    # Parse the client cursor (now just a numeric timestamp)
+    case Integer.parse(client_cursor) do
+      {cursor_timestamp, ""} ->
+        now = System.system_time(:millisecond)
+        # If client cursor is recent (within 1 second), increment timestamp to ensure uniqueness
+        if now - cursor_timestamp < 1000 do
+          # Add jitter - use a timestamp slightly after the client's
+          Integer.to_string(cursor_timestamp + 1)
+        else
+          generate_cursor()
+        end
+
+      _ ->
+        generate_cursor()
+    end
+  end
+
+  # Cursor is just a millisecond timestamp (numeric string)
+  defp generate_cursor do
+    Integer.to_string(System.system_time(:millisecond))
   end
 
   defp send_error(conn, status, message) do
