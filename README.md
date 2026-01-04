@@ -289,7 +289,7 @@ npm install
 npx @durable-streams/server-conformance-tests --run http://localhost:4437
 ```
 
-Current conformance: **124/131 tests passing (94.7%)**
+Current conformance: **131/131 tests passing (100%)**
 
 ## License
 
