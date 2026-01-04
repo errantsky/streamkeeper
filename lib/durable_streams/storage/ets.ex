@@ -2,10 +2,11 @@ defmodule DurableStreams.Storage.ETS do
   @moduledoc """
   ETS-based storage backend for single-node deployments.
 
-  Uses three ETS tables:
+  Uses four ETS tables:
   - :durable_streams_meta - Stream metadata
-  - :durable_streams_data - Ordered chunks {stream_id, sequence, offset, data}
-  - :durable_streams_seq  - Sequence counters
+  - :durable_streams_data - Ordered chunks {{stream_id, sequence}, offset, data}
+  - :durable_streams_seq  - Sequence counters for offset generation
+  - :durable_streams_last_seq - Last seq value per stream for ordering enforcement
   """
 
   @behaviour DurableStreams.Storage.Behaviour
@@ -17,6 +18,7 @@ defmodule DurableStreams.Storage.ETS do
   @meta_table :durable_streams_meta
   @data_table :durable_streams_data
   @seq_table :durable_streams_seq
+  @last_seq_table :durable_streams_last_seq
 
   # Client API
 
@@ -29,6 +31,7 @@ defmodule DurableStreams.Storage.ETS do
     case :ets.insert_new(@meta_table, {stream_id, stream}) do
       true ->
         :ets.insert(@seq_table, {stream_id, 0})
+        :ets.insert(@last_seq_table, {stream_id, nil})
         :ok
 
       false ->
@@ -45,28 +48,59 @@ defmodule DurableStreams.Storage.ETS do
   end
 
   @impl DurableStreams.Storage.Behaviour
-  def append(stream_id, data) when is_binary(data) do
+  def append(stream_id, data, seq \\ nil) when is_binary(data) do
     case :ets.lookup(@meta_table, stream_id) do
       [{^stream_id, %Stream{closed: true}}] ->
         {:error, :closed}
 
       [{^stream_id, _stream}] ->
-        sequence = :ets.update_counter(@seq_table, stream_id, 1)
-        offset = Offset.generate(sequence)
-        # Key is {stream_id, sequence} to ensure uniqueness in ordered_set
-        :ets.insert(@data_table, {{stream_id, sequence}, offset, data})
+        # Check seq ordering if provided
+        case check_seq_ordering(stream_id, seq) do
+          :ok ->
+            sequence = :ets.update_counter(@seq_table, stream_id, 1)
+            offset = Offset.generate(sequence)
+            # Key is {stream_id, sequence} to ensure uniqueness in ordered_set
+            :ets.insert(@data_table, {{stream_id, sequence}, offset, data})
 
-        # Notify subscribers
-        Phoenix.PubSub.broadcast(
-          DurableStreams.PubSub,
-          "stream:#{stream_id}",
-          {:stream_append, stream_id, offset}
-        )
+            # Update last seq if provided
+            if seq, do: :ets.insert(@last_seq_table, {stream_id, seq})
 
-        {:ok, offset}
+            # Notify subscribers
+            Phoenix.PubSub.broadcast(
+              DurableStreams.PubSub,
+              "stream:#{stream_id}",
+              {:stream_append, stream_id, offset}
+            )
+
+            {:ok, offset}
+
+          {:error, :seq_conflict} ->
+            {:error, :seq_conflict}
+        end
 
       [] ->
         {:error, :not_found}
+    end
+  end
+
+  defp check_seq_ordering(_stream_id, nil), do: :ok
+
+  defp check_seq_ordering(stream_id, new_seq) do
+    case :ets.lookup(@last_seq_table, stream_id) do
+      [{^stream_id, nil}] ->
+        :ok
+
+      [{^stream_id, last_seq}] ->
+        # Seq must be lexicographically greater than last_seq
+        # And must not be equal to last_seq (duplicate rejection)
+        if new_seq > last_seq do
+          :ok
+        else
+          {:error, :seq_conflict}
+        end
+
+      [] ->
+        :ok
     end
   end
 
@@ -118,6 +152,7 @@ defmodule DurableStreams.Storage.ETS do
         :ets.delete(@meta_table, stream_id)
         :ets.match_delete(@data_table, {{stream_id, :_}, :_, :_})
         :ets.delete(@seq_table, stream_id)
+        :ets.delete(@last_seq_table, stream_id)
         :ok
 
       [] ->
@@ -138,6 +173,32 @@ defmodule DurableStreams.Storage.ETS do
     Phoenix.PubSub.subscribe(DurableStreams.PubSub, "stream:#{stream_id}")
   end
 
+  @impl DurableStreams.Storage.Behaviour
+  def read_messages(stream_id, from_offset) do
+    case :ets.lookup(@meta_table, stream_id) do
+      [{^stream_id, stream}] ->
+        chunks = get_chunks_after(stream_id, from_offset)
+
+        case chunks do
+          [] ->
+            current = get_current_offset_internal(stream_id)
+            {:ok, %{messages: [], offset: current, has_more: false, closed: stream.closed}}
+
+          _ ->
+            messages =
+              Enum.map(chunks, fn {{_, _}, offset, data} ->
+                %{data: data, offset: offset}
+              end)
+
+            {{_, _}, last_offset, _} = List.last(chunks)
+            {:ok, %{messages: messages, offset: last_offset, has_more: false, closed: stream.closed}}
+        end
+
+      [] ->
+        {:error, :not_found}
+    end
+  end
+
   # GenServer callbacks
 
   @impl GenServer
@@ -145,6 +206,7 @@ defmodule DurableStreams.Storage.ETS do
     :ets.new(@meta_table, [:set, :public, :named_table, read_concurrency: true])
     :ets.new(@data_table, [:ordered_set, :public, :named_table, read_concurrency: true])
     :ets.new(@seq_table, [:set, :public, :named_table])
+    :ets.new(@last_seq_table, [:set, :public, :named_table])
     {:ok, %{}}
   end
 

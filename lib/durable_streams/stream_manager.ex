@@ -39,9 +39,13 @@ defmodule DurableStreams.StreamManager do
 
   Returns `{:ok, offset}` on success, where offset is the position
   of the appended data that can be used for subsequent reads.
+
+  ## Options
+
+  - `:seq` - Optional sequence string for ordering enforcement (default: nil)
   """
-  def append(stream_id, data) do
-    StreamServer.append(stream_id, data)
+  def append(stream_id, data, opts \\ []) do
+    StreamServer.append(stream_id, data, opts)
   catch
     :exit, {:noproc, _} -> {:error, :not_found}
   end
@@ -96,6 +100,21 @@ defmodule DurableStreams.StreamManager do
   """
   def get_metadata(stream_id) do
     StreamServer.get_metadata(stream_id)
+  catch
+    :exit, {:noproc, _} -> {:error, :not_found}
+  end
+
+  @doc """
+  Reads messages from a stream as a list (for JSON mode).
+  Each message is returned separately instead of concatenated.
+
+  ## Options
+
+  - `:live` - If true, long-polls for new messages (default: false)
+  - `:timeout` - Timeout in milliseconds for live reads (default: 30_000)
+  """
+  def read_messages(stream_id, offset, opts \\ []) do
+    StreamServer.read_messages(stream_id, offset, opts)
   catch
     :exit, {:noproc, _} -> {:error, :not_found}
   end

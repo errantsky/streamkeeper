@@ -5,45 +5,187 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   Supports:
   - Regular reads with offset parameter
   - Long-polling with live=true parameter
+  - JSON mode for application/json streams
   """
 
   import Plug.Conn
-  alias DurableStreams.{StreamManager, Offset}
+  alias DurableStreams.{StreamManager, Offset, Stream}
 
   def call(conn) do
     stream_id = conn.path_params["stream_id"]
-    offset = conn.params["offset"] || Offset.start()
+    offset_param = conn.params["offset"]
     live = conn.params["live"] in ["true", "long-poll", "1"]
     timeout = parse_timeout(conn.params["timeout"])
 
+    # Validate offset parameter
+    case validate_offset(offset_param, conn, live) do
+      {:ok, offset} ->
+        case StreamManager.get_metadata(stream_id) do
+          {:ok, meta} ->
+            if Stream.json_mode?(meta) do
+              handle_json_read(conn, stream_id, offset, live, timeout, meta)
+            else
+              handle_binary_read(conn, stream_id, offset, live, timeout, meta)
+            end
+
+          {:error, :not_found} ->
+            send_error(conn, 404, "Stream not found")
+        end
+
+      {:error, message} ->
+        send_error(conn, 400, message)
+    end
+  end
+
+  defp validate_offset(nil, _conn, live) do
+    # Long-poll requires offset parameter
+    if live do
+      {:error, "Offset parameter required for long-poll"}
+    else
+      {:ok, Offset.start()}
+    end
+  end
+
+  defp validate_offset("", _conn, _live), do: {:error, "Offset parameter cannot be empty"}
+
+  defp validate_offset(offset, conn, _live) do
+    # Check for multiple offset parameters by counting in the raw query string
+    query_string = conn.query_string || ""
+    offset_count = query_string
+      |> String.split("&")
+      |> Enum.count(fn part -> String.starts_with?(part, "offset=") end)
+    multiple_offsets = offset_count > 1
+
+    cond do
+      multiple_offsets ->
+        {:error, "Multiple offset parameters not allowed"}
+
+      String.contains?(offset, ",") ->
+        {:error, "Invalid offset: contains comma"}
+
+      String.contains?(offset, " ") ->
+        {:error, "Invalid offset: contains spaces"}
+
+      String.contains?(offset, "\n") or String.contains?(offset, "\r") ->
+        {:error, "Invalid offset: contains newlines"}
+
+      String.contains?(offset, "\t") ->
+        {:error, "Invalid offset: contains tab"}
+
+      # Reject other invalid characters - only alphanumeric, dash, underscore, dot allowed
+      not Regex.match?(~r/^[\w\-\.]+$/, offset) and offset != "-1" ->
+        {:error, "Invalid offset format"}
+
+      true ->
+        {:ok, offset}
+    end
+  end
+
+  defp handle_binary_read(conn, stream_id, offset, live, timeout, meta) do
     case StreamManager.read(stream_id, offset, live: live, timeout: timeout) do
       {:ok, %{data: <<>>} = result} ->
         conn
         |> put_resp_header("stream-next-offset", result.offset)
+        |> put_resp_header("stream-up-to-date", "true")
+        |> maybe_put_cursor_header(live, stream_id)
         |> maybe_put_closed_header(result.closed)
-        |> send_resp(204, "")
+        |> put_resp_header("content-type", meta.content_type)
+        |> send_resp(200, "")
 
       {:ok, result} ->
-        {:ok, meta} = StreamManager.get_metadata(stream_id)
+        etag = generate_etag(stream_id, result.offset)
+        if_none_match = get_req_header(conn, "if-none-match") |> List.first()
 
-        conn
-        |> put_resp_header("stream-next-offset", result.offset)
-        |> maybe_put_closed_header(result.closed)
-        |> put_cache_headers(live)
-        |> put_resp_content_type(meta.content_type)
-        |> send_resp(200, result.data)
+        if if_none_match == etag do
+          conn
+          |> put_resp_header("etag", etag)
+          |> send_resp(304, "")
+        else
+          conn
+          |> put_resp_header("stream-next-offset", result.offset)
+          |> put_resp_header("etag", etag)
+          |> maybe_put_cursor_header(live, stream_id)
+          |> maybe_put_up_to_date_header(result.has_more)
+          |> maybe_put_closed_header(result.closed)
+          |> put_cache_headers(live)
+          |> put_resp_header("content-type", meta.content_type)
+          |> send_resp(200, result.data)
+        end
 
       {:error, :not_found} ->
-        send_resp(conn, 404, "Stream not found")
+        send_error(conn, 404, "Stream not found")
     end
   end
 
-  defp parse_timeout(nil), do: 30_000
+  defp handle_json_read(conn, stream_id, offset, live, timeout, _meta) do
+    case StreamManager.read_messages(stream_id, offset, live: live, timeout: timeout) do
+      {:ok, %{messages: []} = result} ->
+        conn
+        |> put_resp_header("stream-next-offset", result.offset)
+        |> put_resp_header("stream-up-to-date", "true")
+        |> maybe_put_cursor_header(live, stream_id)
+        |> maybe_put_closed_header(result.closed)
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(200, "[]")
+
+      {:ok, result} ->
+        # Parse each message as JSON and return array
+        json_messages =
+          Enum.map(result.messages, fn msg ->
+            case Jason.decode(msg.data) do
+              {:ok, parsed} -> parsed
+              {:error, _} -> msg.data
+            end
+          end)
+
+        etag = generate_etag(stream_id, result.offset)
+
+        conn
+        |> put_resp_header("stream-next-offset", result.offset)
+        |> put_resp_header("etag", etag)
+        |> maybe_put_cursor_header(live, stream_id)
+        |> maybe_put_closed_header(result.closed)
+        |> put_cache_headers(live)
+        |> put_resp_header("content-type", "application/json")
+        |> send_resp(200, Jason.encode!(json_messages))
+
+      {:error, :not_found} ->
+        send_error(conn, 404, "Stream not found")
+    end
+  end
+
+  defp parse_timeout(nil), do: 5_000
   defp parse_timeout(s), do: String.to_integer(s) * 1000
 
-  defp maybe_put_closed_header(conn, true), do: put_resp_header(conn, "x-stream-closed", "true")
+  defp maybe_put_closed_header(conn, true), do: put_resp_header(conn, "stream-closed", "true")
   defp maybe_put_closed_header(conn, _), do: conn
+
+  defp maybe_put_up_to_date_header(conn, true), do: conn  # has_more = true, not up to date
+  defp maybe_put_up_to_date_header(conn, false), do: put_resp_header(conn, "stream-up-to-date", "true")
+
+  defp maybe_put_cursor_header(conn, true, stream_id) do
+    cursor = generate_cursor(stream_id)
+    put_resp_header(conn, "stream-cursor", cursor)
+  end
+  defp maybe_put_cursor_header(conn, _, _), do: conn
 
   defp put_cache_headers(conn, true), do: put_resp_header(conn, "cache-control", "no-cache")
   defp put_cache_headers(conn, false), do: put_resp_header(conn, "cache-control", "public, max-age=60")
+
+  defp generate_etag(stream_id, offset) do
+    hash = :crypto.hash(:sha256, "#{stream_id}:#{offset}") |> Base.encode16(case: :lower)
+    "\"#{String.slice(hash, 0, 16)}\""
+  end
+
+  defp generate_cursor(stream_id) do
+    timestamp = System.system_time(:millisecond)
+    random = :rand.uniform(0xFFFF)
+    Base.encode64("#{stream_id}:#{timestamp}:#{random}")
+  end
+
+  defp send_error(conn, status, message) do
+    conn
+    |> put_resp_header("content-type", "application/json")
+    |> send_resp(status, Jason.encode!(%{error: message}))
+  end
 end

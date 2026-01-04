@@ -15,7 +15,7 @@ defmodule DurableStreams.Protocol.Handlers.Delete do
 
       {:error, :not_found} ->
         conn
-        |> put_resp_content_type("application/json")
+        |> put_resp_header("content-type", "application/json")
         |> send_resp(404, Jason.encode!(%{error: "Stream not found"}))
     end
   end

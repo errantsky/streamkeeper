@@ -33,10 +33,13 @@ defmodule DurableStreams.Storage.Behaviour do
   @callback get_metadata(stream_id) :: {:ok, Stream.t()} | {:error, :not_found}
 
   @doc """
-  Appends data to a stream.
-  Returns {:ok, offset} on success, or an error if the stream doesn't exist or is closed.
+  Appends data to a stream with optional sequence enforcement.
+  The seq parameter, if provided, must be lexicographically greater than the previous seq.
+  Returns {:ok, offset} on success, or an error if the stream doesn't exist, is closed,
+  or the sequence is out of order.
   """
-  @callback append(stream_id, binary()) :: {:ok, offset} | {:error, :not_found | :closed}
+  @callback append(stream_id, binary(), String.t() | nil) ::
+              {:ok, offset} | {:error, :not_found | :closed | :seq_conflict}
 
   @doc """
   Reads data from a stream starting after the given offset.
@@ -67,4 +70,18 @@ defmodule DurableStreams.Storage.Behaviour do
   Returns :ok on success.
   """
   @callback subscribe(stream_id) :: :ok
+
+  @type message :: %{data: binary(), offset: offset()}
+  @type read_messages_result :: %{
+          messages: [message()],
+          offset: offset(),
+          has_more: boolean(),
+          closed: boolean()
+        }
+
+  @doc """
+  Reads messages from a stream as a list (for JSON mode).
+  Each message is returned separately instead of concatenated.
+  """
+  @callback read_messages(stream_id, offset) :: {:ok, read_messages_result} | {:error, :not_found}
 end

@@ -20,23 +20,36 @@ defmodule DurableStreams.Protocol.PlugTest do
         |> StreamPlug.call(@opts)
 
       assert conn.status == 201
-      assert get_resp_header(conn, "location") == ["/v1/stream/#{id}"]
-
-      body = Jason.decode!(conn.resp_body)
-      assert body["id"] == id
-      assert body["content_type"] == "text/plain"
+      # Location is now an absolute URL per conformance spec
+      [location] = get_resp_header(conn, "location")
+      assert String.ends_with?(location, "/v1/stream/#{id}")
     end
 
-    test "returns 409 if stream already exists", %{id: id} do
+    test "returns 200 for idempotent create with same config", %{id: id} do
       # First create
       conn(:put, "/#{id}")
       |> put_req_header("content-type", "text/plain")
       |> StreamPlug.call(@opts)
 
-      # Second create should fail
+      # Second create with same config returns 200 (idempotent)
       conn =
         conn(:put, "/#{id}")
         |> put_req_header("content-type", "text/plain")
+        |> StreamPlug.call(@opts)
+
+      assert conn.status == 200
+    end
+
+    test "returns 409 for create with different config", %{id: id} do
+      # First create with text/plain
+      conn(:put, "/#{id}")
+      |> put_req_header("content-type", "text/plain")
+      |> StreamPlug.call(@opts)
+
+      # Second create with different content-type should fail
+      conn =
+        conn(:put, "/#{id}")
+        |> put_req_header("content-type", "application/json")
         |> StreamPlug.call(@opts)
 
       assert conn.status == 409
@@ -50,9 +63,10 @@ defmodule DurableStreams.Protocol.PlugTest do
       |> put_req_header("content-type", "text/plain")
       |> StreamPlug.call(@opts)
 
-      # Append data
+      # Append data (Content-Type required per conformance spec)
       conn =
         conn(:post, "/#{id}", "Hello!")
+        |> put_req_header("content-type", "text/plain")
         |> StreamPlug.call(@opts)
 
       assert conn.status == 200
@@ -62,9 +76,18 @@ defmodule DurableStreams.Protocol.PlugTest do
       assert is_binary(body["offset"])
     end
 
+    test "returns 400 when Content-Type is missing" do
+      conn =
+        conn(:post, "/nonexistent", "data")
+        |> StreamPlug.call(@opts)
+
+      assert conn.status == 400
+    end
+
     test "returns 404 for non-existent stream" do
       conn =
         conn(:post, "/nonexistent", "data")
+        |> put_req_header("content-type", "text/plain")
         |> StreamPlug.call(@opts)
 
       assert conn.status == 404
@@ -79,6 +102,7 @@ defmodule DurableStreams.Protocol.PlugTest do
       |> StreamPlug.call(@opts)
 
       conn(:post, "/#{id}", "Hello")
+      |> put_req_header("content-type", "text/plain")
       |> StreamPlug.call(@opts)
 
       # Read
@@ -92,7 +116,7 @@ defmodule DurableStreams.Protocol.PlugTest do
       assert get_resp_header(conn, "cache-control") == ["public, max-age=60"]
     end
 
-    test "returns 204 when no data after offset", %{id: id} do
+    test "returns 200 with empty body when no data after offset", %{id: id} do
       # Create stream
       conn(:put, "/#{id}")
       |> put_req_header("content-type", "text/plain")
@@ -101,16 +125,18 @@ defmodule DurableStreams.Protocol.PlugTest do
       # Append and get offset
       append_conn =
         conn(:post, "/#{id}", "Data")
+        |> put_req_header("content-type", "text/plain")
         |> StreamPlug.call(@opts)
 
       [offset] = get_resp_header(append_conn, "stream-next-offset")
 
-      # Read after offset
+      # Read after offset - conformance spec requires 200 with empty body
       conn =
         conn(:get, "/#{id}?offset=#{offset}")
         |> StreamPlug.call(@opts)
 
-      assert conn.status == 204
+      assert conn.status == 200
+      assert conn.resp_body == ""
     end
 
     test "returns 404 for non-existent stream" do
@@ -121,13 +147,14 @@ defmodule DurableStreams.Protocol.PlugTest do
       assert conn.status == 404
     end
 
-    test "returns x-stream-closed header when stream is closed", %{id: id} do
+    test "returns stream-closed header when stream is closed", %{id: id} do
       # Create, append, and close
       conn(:put, "/#{id}")
       |> put_req_header("content-type", "text/plain")
       |> StreamPlug.call(@opts)
 
       conn(:post, "/#{id}", "Data")
+      |> put_req_header("content-type", "text/plain")
       |> StreamPlug.call(@opts)
 
       DurableStreams.close(id)
@@ -138,7 +165,7 @@ defmodule DurableStreams.Protocol.PlugTest do
         |> StreamPlug.call(@opts)
 
       assert conn.status == 200
-      assert get_resp_header(conn, "x-stream-closed") == ["true"]
+      assert get_resp_header(conn, "stream-closed") == ["true"]
     end
   end
 
@@ -188,8 +215,9 @@ defmodule DurableStreams.Protocol.PlugTest do
       # Content-type may or may not have charset depending on Plug version
       [content_type] = get_resp_header(conn, "content-type")
       assert String.starts_with?(content_type, "text/plain")
-      assert get_resp_header(conn, "x-stream-id") == [id]
-      assert get_resp_header(conn, "x-stream-created-at") != []
+      # Conformance spec uses stream-* headers (not x-stream-*)
+      assert get_resp_header(conn, "stream-id") == [id]
+      assert get_resp_header(conn, "stream-next-offset") != []
     end
 
     test "returns 404 for non-existent stream" do
@@ -211,14 +239,17 @@ defmodule DurableStreams.Protocol.PlugTest do
 
       assert conn.status == 201
 
-      # Append multiple times
+      # Append multiple times (Content-Type required)
       conn(:post, "/#{id}", "Hello")
+      |> put_req_header("content-type", "text/plain")
       |> StreamPlug.call(@opts)
 
       conn(:post, "/#{id}", " ")
+      |> put_req_header("content-type", "text/plain")
       |> StreamPlug.call(@opts)
 
       conn(:post, "/#{id}", "World!")
+      |> put_req_header("content-type", "text/plain")
       |> StreamPlug.call(@opts)
 
       # Read all
