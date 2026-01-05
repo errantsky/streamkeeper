@@ -11,3 +11,6 @@ erl_crash.dump
 
 # Conformance test dependencies
 /conformance/node_modules/
+
+# Hex build artifacts
+durable_streams-*/
