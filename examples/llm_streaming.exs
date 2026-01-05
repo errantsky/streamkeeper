@@ -83,9 +83,15 @@ defmodule LLMStreamingLive do
   defp join_existing_stream(socket, stream_id) do
     case DurableStreams.get_metadata(stream_id) do
       {:ok, meta} ->
+        status_msg = if meta.closed do
+          "Stream complete (closed)"
+        else
+          "Joined stream - waiting for new tokens..."
+        end
+
         socket
         |> assign(:stream_id, stream_id)
-        |> assign(:generation_status, if(meta.closed, do: "Generation complete", else: "Joined existing stream"))
+        |> assign(:generation_status, status_msg)
         |> start_listener()
 
       {:error, :not_found} ->
@@ -375,16 +381,18 @@ defmodule LLMStreamingLive do
   end
 
   def handle_info({:new_tokens, messages, new_offset}, socket) do
-    new_tokens =
-      messages
-      |> Enum.map(fn msg ->
+    {new_tokens, error} =
+      Enum.reduce(messages, {[], nil}, fn msg, {tokens, err} ->
         case DurableStreams.JSON.decode(msg.data) do
-          {:ok, %{"token" => token}} -> token
-          {:ok, %{"status" => "complete"}} -> ""
-          _ -> ""
+          {:ok, %{"token" => token}} -> {[token | tokens], err}
+          {:ok, %{"status" => "complete"}} -> {tokens, err}
+          {:ok, %{"status" => "error", "error" => error_msg}} -> {tokens, error_msg}
+          _ -> {tokens, err}
         end
       end)
-      |> Enum.filter(&(&1 != ""))
+
+    # Tokens were collected in reverse order, so reverse back
+    new_tokens = Enum.reverse(new_tokens)
 
     # Tokens arrive in chronological order [oldest, ..., newest]
     # We store as [newest, ..., oldest] so prepend reversed new_tokens
@@ -393,6 +401,8 @@ defmodule LLMStreamingLive do
       |> assign(:tokens, Enum.reverse(new_tokens) ++ socket.assigns.tokens)
       |> assign(:token_count, socket.assigns.token_count + length(new_tokens))
       |> assign(:offset, new_offset)
+
+    socket = if error, do: assign(socket, :error, error), else: socket
 
     {:noreply, socket}
   end
@@ -519,24 +529,34 @@ defmodule LLMStreamingLive do
         ]
       })
 
-    # Use Req for streaming
-    case Req.post(url,
-           headers: headers,
-           body: body,
-           into: fn {:data, chunk}, acc -> handle_sse_chunk(parent, stream_id, chunk, acc) end,
-           receive_timeout: 60_000
-         ) do
-      {:ok, _response} ->
-        # Mark stream as complete
-        DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "complete"}))
+    # Use Req for streaming - wrap in try/catch to ensure stream is always closed
+    try do
+      case Req.post(url,
+             headers: headers,
+             body: body,
+             into: fn {:data, chunk}, acc -> handle_sse_chunk(parent, stream_id, chunk, acc) end,
+             receive_timeout: 60_000
+           ) do
+        {:ok, _response} ->
+          # Mark stream as complete
+          DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "complete"}))
+          DurableStreams.close(stream_id)
+          send(parent, {:generation_status, "Generation complete"})
+
+        {:error, %Req.TransportError{reason: reason}} ->
+          DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "Connection error: #{inspect(reason)}"}))
+          DurableStreams.close(stream_id)
+          send(parent, {:stream_error, "Connection error: #{inspect(reason)}"})
+
+        {:error, reason} ->
+          DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "API error: #{inspect(reason)}"}))
+          DurableStreams.close(stream_id)
+          send(parent, {:stream_error, "API error: #{inspect(reason)}"})
+      end
+    rescue
+      e ->
+        DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "Exception: #{inspect(e)}"}))
         DurableStreams.close(stream_id)
-        send(parent, {:generation_status, "Generation complete"})
-
-      {:error, %Req.TransportError{reason: reason}} ->
-        send(parent, {:stream_error, "Connection error: #{inspect(reason)}"})
-
-      {:error, reason} ->
-        send(parent, {:stream_error, "API error: #{inspect(reason)}"})
     end
   end
 
