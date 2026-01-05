@@ -36,6 +36,8 @@ Mix.install([
   {:req, "~> 0.5"}
 ])
 
+# Only define the module if it doesn't already exist (prevents redefinition on hot reload)
+unless Code.ensure_loaded?(LLMStreamingLive) do
 defmodule LLMStreamingLive do
   use Phoenix.LiveView
 
@@ -622,45 +624,53 @@ defmodule LLMStreamingLive do
 
   defp truncate_id(id), do: id
 end
+end  # end unless
 
-# Startup message
-IO.puts("""
+# Only print startup message and start server once
+unless Process.whereis(PhoenixPlayground.Endpoint) do
+  # Startup message
+  IO.puts("""
 
-\e[1;35m══════════════════════════════════════════════════════════════\e[0m
-\e[1;37m  LLM Token Streaming Demo\e[0m
-\e[1;35m══════════════════════════════════════════════════════════════\e[0m
+  \e[1;35m══════════════════════════════════════════════════════════════\e[0m
+  \e[1;37m  LLM Token Streaming Demo\e[0m
+  \e[1;35m══════════════════════════════════════════════════════════════\e[0m
 
-\e[1;32m  ➜  Open:\e[0m  \e[4mhttp://localhost:4000\e[0m
+  \e[1;32m  ➜  Open:\e[0m  \e[4mhttp://localhost:4000\e[0m
 
-\e[33m  Features demonstrated:\e[0m
-    • Resumable token streaming (disconnect mid-response, resume)
-    • Multi-client broadcast (open multiple tabs)
-    • Replay capability (re-watch from the beginning)
+  \e[33m  Features demonstrated:\e[0m
+      • Resumable token streaming (disconnect mid-response, resume)
+      • Multi-client broadcast (open multiple tabs)
+      • Replay capability (re-watch from the beginning)
 
-\e[33m  Requirements:\e[0m
-    • ANTHROPIC_API_KEY environment variable must be set
+  \e[33m  Requirements:\e[0m
+      • ANTHROPIC_API_KEY environment variable must be set
 
-\e[33m  Try this:\e[0m
-    1. Enter a prompt and click Generate
-    2. Mid-stream, click Disconnect, then Resume → no tokens lost!
-    3. Open another tab and click Replay to watch from start
+  \e[33m  Try this:\e[0m
+      1. Enter a prompt and click Generate
+      2. Mid-stream, click Disconnect, then Resume → no tokens lost!
+      3. Open another tab and click Replay to watch from start
 
-\e[1;35m══════════════════════════════════════════════════════════════\e[0m
-  Press Ctrl+C twice to stop.
-\e[1;35m══════════════════════════════════════════════════════════════\e[0m
-""")
+  \e[1;35m══════════════════════════════════════════════════════════════\e[0m
+    Press Ctrl+C twice to stop.
+  \e[1;35m══════════════════════════════════════════════════════════════\e[0m
+  """)
 
-# Check for API key
-if System.get_env("ANTHROPIC_API_KEY") do
-  IO.puts("\e[32m  ✓ ANTHROPIC_API_KEY is set\e[0m\n")
-else
-  IO.puts("\e[31m  ✗ ANTHROPIC_API_KEY not set - please set it before using\e[0m")
-  IO.puts("\e[33m    export ANTHROPIC_API_KEY=your-key-here\e[0m\n")
+  # Check for API key
+  if System.get_env("ANTHROPIC_API_KEY") do
+    IO.puts("\e[32m  ✓ ANTHROPIC_API_KEY is set\e[0m\n")
+  else
+    IO.puts("\e[31m  ✗ ANTHROPIC_API_KEY not set - please set it before using\e[0m")
+    IO.puts("\e[33m    export ANTHROPIC_API_KEY=your-key-here\e[0m\n")
+  end
+
+  # Disable live reload to prevent script re-evaluation
+  Application.put_env(:phoenix_playground, PhoenixPlayground.Endpoint, [
+    live_reload: [patterns: []],
+    code_reloader: false
+  ])
+
+  PhoenixPlayground.start(
+    live: LLMStreamingLive,
+    open_browser: false
+  )
 end
-
-PhoenixPlayground.start(
-  live: LLMStreamingLive,
-  endpoint_options: [
-    live_reload: [patterns: []]  # Disable live reload
-  ]
-)
