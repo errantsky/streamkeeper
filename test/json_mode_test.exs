@@ -33,7 +33,7 @@ defmodule DurableStreams.JsonModeTest do
         |> StreamPlug.call(@opts)
 
       assert conn.status == 200
-      body = Jason.decode!(conn.resp_body)
+      body = DurableStreams.JSON.decode!(conn.resp_body)
       assert body == [%{"name" => "test"}]
     end
 
@@ -57,7 +57,7 @@ defmodule DurableStreams.JsonModeTest do
         |> StreamPlug.call(@opts)
 
       assert conn.status == 200
-      body = Jason.decode!(conn.resp_body)
+      body = DurableStreams.JSON.decode!(conn.resp_body)
       assert body == [%{"a" => 1}, %{"b" => 2}, %{"c" => 3}]
     end
 
@@ -83,7 +83,7 @@ defmodule DurableStreams.JsonModeTest do
         |> StreamPlug.call(@opts)
 
       assert conn.status == 200
-      body = Jason.decode!(conn.resp_body)
+      body = DurableStreams.JSON.decode!(conn.resp_body)
       assert body == [%{"msg" => "first"}, %{"msg" => "second"}]
     end
 
@@ -129,7 +129,7 @@ defmodule DurableStreams.JsonModeTest do
         |> StreamPlug.call(@opts)
 
       assert conn.status == 200
-      body = Jason.decode!(conn.resp_body)
+      body = DurableStreams.JSON.decode!(conn.resp_body)
       assert body == [%{"msg" => "second"}]
     end
 

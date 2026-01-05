@@ -43,7 +43,7 @@ defmodule DurableStreams.MixProject do
       # PubSub for live updates
       {:phoenix_pubsub, "~> 2.1"},
 
-      # JSON - only used in dev/test for parsing responses (production uses Erlang :json)
+      # JSON - only used in dev/test (credo requires it; production uses Erlang :json)
       {:jason, "~> 1.4", only: [:dev, :test]},
 
       # Telemetry

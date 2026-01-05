@@ -72,7 +72,7 @@ defmodule DurableStreams.Protocol.PlugTest do
       assert conn.status == 200
       assert get_resp_header(conn, "stream-next-offset") != []
 
-      body = Jason.decode!(conn.resp_body)
+      body = DurableStreams.JSON.decode!(conn.resp_body)
       assert is_binary(body["offset"])
     end
 

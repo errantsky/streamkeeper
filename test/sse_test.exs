@@ -26,7 +26,7 @@ defmodule DurableStreams.SSETest do
         |> StreamPlug.call(@opts)
 
       assert conn.status == 400
-      assert Jason.decode!(conn.resp_body)["error"] =~ "Offset"
+      assert DurableStreams.JSON.decode!(conn.resp_body)["error"] =~ "Offset"
     end
 
     test "returns 404 for non-existent stream" do
@@ -238,7 +238,7 @@ defmodule DurableStreams.SSETest do
   # Helper to extract control event data from SSE body
   defp extract_control_event(body) do
     case Regex.run(~r/event: control\ndata: ({.*?})\n/, body) do
-      [_, json] -> Jason.decode!(json)
+      [_, json] -> DurableStreams.JSON.decode!(json)
       nil -> %{}
     end
   end
