@@ -15,7 +15,8 @@
 #    (useful for debugging, logging, or showing responses to late joiners)
 #
 # Requirements:
-#   - Set ANTHROPIC_API_KEY environment variable
+#   - Set ANTHROPIC_API_KEY and/or OPENAI_API_KEY environment variable
+#   - If both are set, one is randomly chosen for each generation
 #
 # Run with: iex examples/llm_streaming.exs
 # Then open: http://localhost:4000
@@ -314,11 +315,21 @@ defmodule LLMStreamingLive do
     if prompt == "" do
       {:noreply, assign(socket, :error, "Please enter a prompt")}
     else
-      api_key = System.get_env("ANTHROPIC_API_KEY")
+      # Check which API keys are available
+      anthropic_key = System.get_env("ANTHROPIC_API_KEY")
+      openai_key = System.get_env("OPENAI_API_KEY")
 
-      if is_nil(api_key) or api_key == "" do
-        {:noreply, assign(socket, :error, "ANTHROPIC_API_KEY environment variable not set")}
+      available_providers =
+        []
+        |> then(fn list -> if valid_key?(anthropic_key), do: [{:anthropic, anthropic_key} | list], else: list end)
+        |> then(fn list -> if valid_key?(openai_key), do: [{:openai, openai_key} | list], else: list end)
+
+      if available_providers == [] do
+        {:noreply, assign(socket, :error, "No API key set. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY")}
       else
+        # Randomly pick one of the available providers
+        {provider, api_key} = Enum.random(available_providers)
+
         # Create a new stream for this response
         stream_id = "llm-response-#{:erlang.system_time(:millisecond)}"
 
@@ -326,7 +337,7 @@ defmodule LLMStreamingLive do
           {:ok, _} ->
             # Start the LLM streaming in a background process
             parent = self()
-            spawn(fn -> stream_claude_response(parent, stream_id, prompt, api_key) end)
+            spawn(fn -> stream_llm_response(parent, stream_id, prompt, provider, api_key) end)
 
             socket =
               socket
@@ -337,7 +348,7 @@ defmodule LLMStreamingLive do
               |> assign(:error, nil)
               |> assign(:resumed_from, nil)
               |> assign(:prompt, prompt)
-              |> assign(:generation_status, "Starting generation...")
+              |> assign(:generation_status, "Starting generation (#{provider})...")
               |> start_listener()
               |> push_patch(to: "/?stream=#{stream_id}")
 
@@ -349,6 +360,10 @@ defmodule LLMStreamingLive do
       end
     end
   end
+
+  defp valid_key?(nil), do: false
+  defp valid_key?(""), do: false
+  defp valid_key?(_), do: true
 
   def handle_event("disconnect", _, socket) do
     socket =
@@ -532,6 +547,15 @@ defmodule LLMStreamingLive do
     end
   end
 
+  # Dispatch to appropriate LLM provider
+  defp stream_llm_response(parent, stream_id, prompt, :anthropic, api_key) do
+    stream_claude_response(parent, stream_id, prompt, api_key)
+  end
+
+  defp stream_llm_response(parent, stream_id, prompt, :openai, api_key) do
+    stream_openai_response(parent, stream_id, prompt, api_key)
+  end
+
   # Stream Claude response into the durable stream
   defp stream_claude_response(parent, stream_id, prompt, api_key) do
     Logger.info("[LLM] Starting Claude API request for stream: #{stream_id}")
@@ -555,43 +579,71 @@ defmodule LLMStreamingLive do
         ]
       })
 
-    # Use Req for streaming - wrap in try/catch to ensure stream is always closed
+    stream_with_sse(parent, stream_id, url, headers, body, :anthropic)
+  end
+
+  # Stream OpenAI response into the durable stream
+  defp stream_openai_response(parent, stream_id, prompt, api_key) do
+    Logger.info("[LLM] Starting OpenAI API request for stream: #{stream_id}")
+    send(parent, {:generation_status, "Connecting to OpenAI API..."})
+
+    url = "https://api.openai.com/v1/chat/completions"
+
+    headers = [
+      {"authorization", "Bearer #{api_key}"},
+      {"content-type", "application/json"}
+    ]
+
+    body =
+      DurableStreams.JSON.encode!(%{
+        "model" => "gpt-4o-mini",
+        "max_tokens" => 1024,
+        "stream" => true,
+        "messages" => [
+          %{"role" => "user", "content" => prompt}
+        ]
+      })
+
+    stream_with_sse(parent, stream_id, url, headers, body, :openai)
+  end
+
+  # Common SSE streaming logic
+  defp stream_with_sse(parent, stream_id, url, headers, body, provider) do
     try do
       case Req.post(url,
              headers: headers,
              body: body,
-             into: fn {:data, chunk}, acc -> handle_sse_chunk(parent, stream_id, chunk, acc) end,
+             into: fn {:data, chunk}, acc -> handle_sse_chunk(parent, stream_id, chunk, acc, provider) end,
              receive_timeout: 60_000
            ) do
         {:ok, _response} ->
-          # Mark stream as complete
-          Logger.info("[LLM] Claude API streaming completed successfully")
+          Logger.info("[LLM] #{provider} API streaming completed successfully")
           DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "complete"}))
           DurableStreams.close(stream_id)
           send(parent, {:generation_status, "Generation complete"})
 
         {:error, %Req.TransportError{reason: reason}} ->
-          Logger.error("[LLM] Claude API transport error: #{inspect(reason)}")
+          Logger.error("[LLM] #{provider} API transport error: #{inspect(reason)}")
           DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "Connection error: #{inspect(reason)}"}))
           DurableStreams.close(stream_id)
           send(parent, {:stream_error, "Connection error: #{inspect(reason)}"})
 
         {:error, reason} ->
-          Logger.error("[LLM] Claude API error: #{inspect(reason)}")
+          Logger.error("[LLM] #{provider} API error: #{inspect(reason)}")
           DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "API error: #{inspect(reason)}"}))
           DurableStreams.close(stream_id)
           send(parent, {:stream_error, "API error: #{inspect(reason)}"})
       end
     rescue
       e ->
-        Logger.error("[LLM] Exception during API call: #{inspect(e)}")
+        Logger.error("[LLM] Exception during #{provider} API call: #{inspect(e)}")
         DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "Exception: #{inspect(e)}"}))
         DurableStreams.close(stream_id)
     end
   end
 
-  # Handle SSE chunks from Claude API
-  defp handle_sse_chunk(parent, stream_id, chunk, acc) do
+  # Handle SSE chunks from LLM APIs
+  defp handle_sse_chunk(parent, stream_id, chunk, acc, provider) do
     Logger.debug("[LLM] SSE chunk: #{byte_size(chunk)} bytes\n#{chunk}")
 
     # Check if this is a direct JSON error (not SSE format)
@@ -610,17 +662,17 @@ defmodule LLMStreamingLive do
           {:cont, acc}
 
         _ ->
-          parse_sse_lines(parent, stream_id, chunk)
+          parse_sse_lines(parent, stream_id, chunk, provider)
           {:cont, acc}
       end
     else
-      parse_sse_lines(parent, stream_id, chunk)
+      parse_sse_lines(parent, stream_id, chunk, provider)
       {:cont, acc}
     end
   end
 
   # Parse SSE format: "event: ...\ndata: {...}\n\n"
-  defp parse_sse_lines(parent, stream_id, chunk) do
+  defp parse_sse_lines(parent, stream_id, chunk, provider) do
     lines = String.split(chunk, "\n")
 
     Enum.each(lines, fn line ->
@@ -629,26 +681,8 @@ defmodule LLMStreamingLive do
 
         if json_str != "[DONE]" do
           case DurableStreams.JSON.decode(json_str) do
-            {:ok, %{"type" => "content_block_delta", "delta" => %{"text" => text}}} ->
-              # Store each token in the durable stream
-              token_msg = DurableStreams.JSON.encode!(%{"token" => text})
-              DurableStreams.append(stream_id, token_msg)
-              send(parent, {:generation_status, "Streaming tokens..."})
-
-            {:ok, %{"type" => "message_start"}} ->
-              Logger.debug("[LLM] Message started")
-              send(parent, {:generation_status, "Response started..."})
-
-            {:ok, %{"type" => "message_stop"}} ->
-              Logger.debug("[LLM] Message stopped")
-              send(parent, {:generation_status, "Response complete"})
-
-            {:ok, %{"type" => "error", "error" => %{"message" => message}}} ->
-              Logger.error("[LLM] API error in stream: #{message}")
-              send(parent, {:stream_error, message})
-
-            {:ok, other} ->
-              Logger.debug("[LLM] SSE event: #{inspect(other["type"])}")
+            {:ok, data} ->
+              handle_sse_data(parent, stream_id, data, provider)
 
             {:error, _} ->
               Logger.warning("[LLM] Failed to parse SSE data: #{json_str}")
@@ -656,6 +690,55 @@ defmodule LLMStreamingLive do
         end
       end
     end)
+  end
+
+  # Handle Claude SSE data
+  defp handle_sse_data(parent, stream_id, %{"type" => "content_block_delta", "delta" => %{"text" => text}}, :anthropic) do
+    token_msg = DurableStreams.JSON.encode!(%{"token" => text})
+    DurableStreams.append(stream_id, token_msg)
+    send(parent, {:generation_status, "Streaming tokens (Claude)..."})
+  end
+
+  defp handle_sse_data(parent, _stream_id, %{"type" => "message_start"}, :anthropic) do
+    Logger.debug("[LLM] Claude message started")
+    send(parent, {:generation_status, "Response started..."})
+  end
+
+  defp handle_sse_data(parent, _stream_id, %{"type" => "message_stop"}, :anthropic) do
+    Logger.debug("[LLM] Claude message stopped")
+    send(parent, {:generation_status, "Response complete"})
+  end
+
+  defp handle_sse_data(parent, _stream_id, %{"type" => "error", "error" => %{"message" => message}}, :anthropic) do
+    Logger.error("[LLM] Claude API error in stream: #{message}")
+    send(parent, {:stream_error, message})
+  end
+
+  # Handle OpenAI SSE data
+  defp handle_sse_data(parent, stream_id, %{"choices" => [%{"delta" => %{"content" => text}} | _]}, :openai) when is_binary(text) do
+    token_msg = DurableStreams.JSON.encode!(%{"token" => text})
+    DurableStreams.append(stream_id, token_msg)
+    send(parent, {:generation_status, "Streaming tokens (OpenAI)..."})
+  end
+
+  defp handle_sse_data(parent, _stream_id, %{"choices" => [%{"delta" => %{"role" => "assistant"}} | _]}, :openai) do
+    Logger.debug("[LLM] OpenAI message started")
+    send(parent, {:generation_status, "Response started..."})
+  end
+
+  defp handle_sse_data(parent, _stream_id, %{"choices" => [%{"finish_reason" => reason} | _]}, :openai) when not is_nil(reason) do
+    Logger.debug("[LLM] OpenAI message finished: #{reason}")
+    send(parent, {:generation_status, "Response complete"})
+  end
+
+  defp handle_sse_data(parent, _stream_id, %{"error" => %{"message" => message}}, :openai) do
+    Logger.error("[LLM] OpenAI API error in stream: #{message}")
+    send(parent, {:stream_error, message})
+  end
+
+  # Catch-all for unhandled SSE events
+  defp handle_sse_data(_parent, _stream_id, data, provider) do
+    Logger.debug("[LLM] #{provider} SSE event: #{inspect(Map.get(data, "type", "unknown"))}")
   end
 
   # Helpers
@@ -701,9 +784,11 @@ unless Process.whereis(PhoenixPlayground.Endpoint) do
       • Resumable token streaming (disconnect mid-response, resume)
       • Multi-client broadcast (open multiple tabs)
       • Replay capability (re-watch from the beginning)
+      • Multi-provider support (Claude and OpenAI)
 
   \e[33m  Requirements:\e[0m
-      • ANTHROPIC_API_KEY environment variable must be set
+      • Set ANTHROPIC_API_KEY and/or OPENAI_API_KEY
+      • If both are set, one is randomly chosen per request
 
   \e[33m  Try this:\e[0m
       1. Enter a prompt and click Generate
@@ -715,13 +800,29 @@ unless Process.whereis(PhoenixPlayground.Endpoint) do
   \e[1;35m══════════════════════════════════════════════════════════════\e[0m
   """)
 
-  # Check for API key
-  if System.get_env("ANTHROPIC_API_KEY") do
-    IO.puts("\e[32m  ✓ ANTHROPIC_API_KEY is set\e[0m\n")
+  # Check for API keys
+  anthropic_set = System.get_env("ANTHROPIC_API_KEY") != nil
+  openai_set = System.get_env("OPENAI_API_KEY") != nil
+
+  if anthropic_set do
+    IO.puts("\e[32m  ✓ ANTHROPIC_API_KEY is set (Claude)\e[0m")
   else
-    IO.puts("\e[31m  ✗ ANTHROPIC_API_KEY not set - please set it before using\e[0m")
-    IO.puts("\e[33m    export ANTHROPIC_API_KEY=your-key-here\e[0m\n")
+    IO.puts("\e[33m  ○ ANTHROPIC_API_KEY not set\e[0m")
   end
+
+  if openai_set do
+    IO.puts("\e[32m  ✓ OPENAI_API_KEY is set (GPT)\e[0m")
+  else
+    IO.puts("\e[33m  ○ OPENAI_API_KEY not set\e[0m")
+  end
+
+  if not anthropic_set and not openai_set do
+    IO.puts("\n\e[31m  ⚠ No API keys set - please set at least one:\e[0m")
+    IO.puts("\e[33m    export ANTHROPIC_API_KEY=your-key-here\e[0m")
+    IO.puts("\e[33m    export OPENAI_API_KEY=your-key-here\e[0m")
+  end
+
+  IO.puts("")
 
   # Disable live reload to prevent script re-evaluation
   Application.put_env(:phoenix_playground, PhoenixPlayground.Endpoint, [

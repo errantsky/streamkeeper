@@ -234,7 +234,9 @@ Try disconnecting and reconnecting — no events are lost!
 The flagship example demonstrating resumable AI token streaming — the primary use case from the [Durable Streams announcement](https://electric-sql.com/blog/2025/12/09/announcing-durable-streams):
 
 ```bash
+# Set at least one API key (if both are set, one is randomly chosen)
 export ANTHROPIC_API_KEY=your-key-here
+export OPENAI_API_KEY=your-key-here
 iex examples/llm_streaming.exs
 # Open http://localhost:4000
 ```
@@ -243,6 +245,7 @@ Demonstrates:
 - **Resumable streaming** — disconnect mid-response and resume without losing tokens
 - **Multi-client broadcast** — multiple tabs watch the same AI response
 - **Replay capability** — re-watch responses from the beginning
+- **Multi-provider support** — works with both Claude and GPT
 
 See [examples/README.md](examples/README.md) for more details.
 

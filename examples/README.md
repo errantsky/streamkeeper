@@ -71,10 +71,16 @@ Features demonstrated:
 - **Multi-client broadcast** - Multiple tabs watch the same AI response in real-time
 - **Replay capability** - Re-watch the entire response from the beginning
 - **CDN-friendly design** - Offset-based URLs enable edge caching
+- **Multi-provider support** - Works with both Claude (Anthropic) and GPT (OpenAI)
 
 **Requirements:**
+
+Set at least one API key. If both are set, one is randomly chosen for each generation:
+
 ```bash
-export ANTHROPIC_API_KEY=your-api-key-here
+export ANTHROPIC_API_KEY=your-anthropic-key-here
+# and/or
+export OPENAI_API_KEY=your-openai-key-here
 ```
 
 **Run:**
