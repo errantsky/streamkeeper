@@ -119,14 +119,6 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
     end
   end
 
-  defp stream_loop(conn, stream_id, offset, meta, client_cursor) do
-    if Stream.json_mode?(meta) do
-      stream_json_loop(conn, stream_id, offset, client_cursor)
-    else
-      stream_binary_loop(conn, stream_id, offset, meta, client_cursor)
-    end
-  end
-
   defp stream_binary_loop(conn, stream_id, offset, meta, client_cursor) do
     case StreamManager.read(stream_id, offset, live: true, timeout: 5_000) do
       {:ok, %{data: <<>>, closed: true} = result} ->
