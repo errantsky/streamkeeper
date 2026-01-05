@@ -42,8 +42,16 @@ end
 Start the HTTP server on a specific port:
 
 ```elixir
+# Create a router module that mounts the protocol at /v1/stream
+defmodule MyApp.StreamRouter do
+  use Plug.Router
+  plug :match
+  plug :dispatch
+  forward "/v1/stream", to: DurableStreams.Protocol.Plug
+end
+
 # In your application.ex or IEx
-{:ok, _} = Plug.Cowboy.http(DurableStreams.Protocol.V1Plug, [], port: 4437)
+{:ok, _} = Plug.Cowboy.http(MyApp.StreamRouter, [], port: 4000)
 ```
 
 ### Phoenix Integration
@@ -375,21 +383,8 @@ This library passes 100% of the official [Durable Streams conformance tests](htt
 **Running conformance tests:**
 
 ```bash
-# Option 1: Use the mix task (recommended)
+# Use the mix task (recommended)
 mix durable_streams.conformance
-
-# Option 2: Manual setup
-# Install npm dependencies (first time only)
-cd conformance
-npm install
-cd ..
-
-# Start server in one terminal
-mix run -e 'Plug.Cowboy.http(DurableStreams.Protocol.V1Plug, [], port: 4437); Process.sleep(:infinity)'
-
-# Run tests in another terminal
-cd conformance
-npx @durable-streams/server-conformance-tests --run http://localhost:4437
 ```
 
 **Current conformance: 131/131 tests passing (100%)**
@@ -411,7 +406,6 @@ mix credo
 ```mermaid
 graph TB
     subgraph "HTTP Layer"
-        V1Plug[V1Plug Router]
         Plug[Protocol.Plug]
         Handlers[HTTP Handlers]
     end
@@ -432,7 +426,6 @@ graph TB
         Reg[Registry]
     end
 
-    V1Plug --> Plug
     Plug --> Handlers
     Handlers --> SM
     SM --> SS

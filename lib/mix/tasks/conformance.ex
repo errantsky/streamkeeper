@@ -22,6 +22,21 @@ defmodule Mix.Tasks.DurableStreams.Conformance do
 
   @shortdoc "Run Durable Streams server conformance tests"
 
+  # Inline router for conformance tests - mounts Protocol.Plug at /v1/stream
+  defmodule ConformanceRouter do
+    use Plug.Router
+
+    plug Plug.Logger
+    plug :match
+    plug :dispatch
+
+    forward "/v1/stream", to: DurableStreams.Protocol.Plug
+
+    match _ do
+      send_resp(conn, 404, "Not Found")
+    end
+  end
+
   @impl Mix.Task
   def run(_args) do
     # Ensure dependencies are compiled
@@ -45,7 +60,7 @@ defmodule Mix.Tasks.DurableStreams.Conformance do
     # Start Cowboy HTTP server
     port = 4437
 
-    case Plug.Cowboy.http(DurableStreams.Protocol.V1Plug, [], port: port) do
+    case Plug.Cowboy.http(ConformanceRouter, [], port: port) do
       {:ok, _pid} ->
         Mix.shell().info("Server started on http://localhost:#{port}")
 
@@ -72,7 +87,7 @@ defmodule Mix.Tasks.DurableStreams.Conformance do
       )
 
     # Stop the server
-    Plug.Cowboy.shutdown(DurableStreams.Protocol.V1Plug.HTTP)
+    Plug.Cowboy.shutdown(ConformanceRouter.HTTP)
 
     if exit_code != 0 do
       Mix.raise("Conformance tests failed with exit code #{exit_code}")

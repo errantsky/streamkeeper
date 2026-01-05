@@ -75,8 +75,7 @@ defmodule DurableStreams.MixProject do
           DurableStreams.StreamManager
         ],
         "HTTP Integration": [
-          DurableStreams.Protocol.Plug,
-          DurableStreams.Protocol.V1Plug
+          DurableStreams.Protocol.Plug
         ],
         "Phoenix LiveView": [
           DurableStreams.LiveView

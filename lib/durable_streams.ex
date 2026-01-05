@@ -29,9 +29,16 @@ defmodule DurableStreams do
 
   ## Standalone HTTP Server
 
-  For standalone usage with Cowboy:
+  For standalone usage with Cowboy, create a router that forwards to Protocol.Plug:
 
-      {:ok, _} = Plug.Cowboy.http(DurableStreams.Protocol.V1Plug, [], port: 4437)
+      defmodule MyApp.Router do
+        use Plug.Router
+        plug :match
+        plug :dispatch
+        forward "/v1/stream", to: DurableStreams.Protocol.Plug
+      end
+
+      {:ok, _} = Plug.Cowboy.http(MyApp.Router, [], port: 4000)
 
   ## JSON Mode
 
