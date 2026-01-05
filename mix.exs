@@ -52,7 +52,8 @@ defmodule DurableStreams.MixProject do
       # Dev/Test
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:stream_data, "~> 1.0", only: [:dev, :test]}
     ]
   end
 
