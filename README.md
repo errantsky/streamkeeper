@@ -288,17 +288,6 @@ elixir examples/simple_demo.exs
 
 Shows stream creation, appending, reading, long-polling, and JSON mode.
 
-### Live Activity Stream
-
-An interactive Phoenix LiveView demonstrating long-polling and resume:
-
-```bash
-iex examples/live_activity_stream.exs
-# Open http://localhost:4000
-```
-
-Try disconnecting and reconnecting — no events are lost!
-
 ### LLM Token Streaming
 
 The flagship example demonstrating resumable AI token streaming — the primary use case from the [Durable Streams announcement](https://electric-sql.com/blog/2025/12/09/announcing-durable-streams):
@@ -326,7 +315,7 @@ The library uses sensible defaults but can be configured:
 
 ```elixir
 # config/config.exs
-config :durable_streams,
+config :streamkeeper,
   storage: DurableStreams.Storage.ETS,
   default_timeout: 30_000
 ```

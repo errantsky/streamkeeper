@@ -33,7 +33,7 @@
 Mix.install([
   {:phoenix_playground, "~> 0.1.8"},
   {:phoenix_live_view, "~> 1.0"},
-  {:durable_streams, path: "."},
+  {:streamkeeper, path: "."},
   {:req, "~> 0.5"}
 ])
 

@@ -11,7 +11,7 @@
 # (from the durable_streams project root)
 
 Mix.install([
-  {:durable_streams, path: "."}
+  {:streamkeeper, path: "."}
 ])
 
 defmodule SimpleDemo do
