@@ -19,6 +19,8 @@ defmodule DurableStreams.Protocol.Handlers.Head do
         |> put_resp_header("content-type", meta.content_type)
         |> put_resp_header("stream-id", meta.id)
         |> put_resp_header("stream-next-offset", current_offset)
+        # Per protocol: HEAD responses should not be cached to avoid stale tail offsets
+        |> put_resp_header("cache-control", "no-store")
         |> maybe_put_closed_header(meta.closed)
         |> maybe_put_ttl_header(meta.ttl)
         |> maybe_put_expires_at_header(meta.expires_at)
