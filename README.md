@@ -220,14 +220,29 @@ Shows stream creation, appending, reading, long-polling, and JSON mode.
 
 ### Live Activity Stream
 
-An interactive Phoenix LiveView application:
+An interactive Phoenix LiveView demonstrating long-polling and resume:
 
 ```bash
 iex examples/live_activity_stream.exs
 # Open http://localhost:4000
 ```
 
-Demonstrates real-time event streaming across multiple browser tabs using Phoenix Playground.
+Try disconnecting and reconnecting — no events are lost!
+
+### LLM Token Streaming
+
+The flagship example demonstrating resumable AI token streaming — the primary use case from the [Durable Streams announcement](https://electric-sql.com/blog/2025/12/09/announcing-durable-streams):
+
+```bash
+export ANTHROPIC_API_KEY=your-key-here
+iex examples/llm_streaming.exs
+# Open http://localhost:4000
+```
+
+Demonstrates:
+- **Resumable streaming** — disconnect mid-response and resume without losing tokens
+- **Multi-client broadcast** — multiple tabs watch the same AI response
+- **Replay capability** — re-watch responses from the beginning
 
 See [examples/README.md](examples/README.md) for more details.
 
