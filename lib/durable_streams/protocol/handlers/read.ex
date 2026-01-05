@@ -88,13 +88,15 @@ defmodule DurableStreams.Protocol.Handlers.Read do
       {:ok, %{data: <<>>} = result} ->
         # For empty streams, use zero offset instead of -1
         actual_offset = if Offset.start?(result.offset), do: Offset.zero(), else: result.offset
+        # Per protocol: long-poll timeout with no data returns 204 No Content
+        status = if live, do: 204, else: 200
         conn
         |> put_resp_header("stream-next-offset", actual_offset)
         |> put_resp_header("stream-up-to-date", "true")
         |> maybe_put_cursor_header(live, stream_id)
         |> maybe_put_closed_header(result.closed)
         |> put_resp_header("content-type", meta.content_type)
-        |> send_resp(200, "")
+        |> send_resp(status, "")
 
       {:ok, result} ->
         etag = generate_etag(stream_id, result.offset)
@@ -126,13 +128,16 @@ defmodule DurableStreams.Protocol.Handlers.Read do
       {:ok, %{messages: []} = result} ->
         # For empty streams, use zero offset instead of -1
         actual_offset = if Offset.start?(result.offset), do: Offset.zero(), else: result.offset
+        # Per protocol: long-poll timeout with no data returns 204 No Content
+        # For regular reads, return 200 with empty array
+        {status, body} = if live, do: {204, ""}, else: {200, "[]"}
         conn
         |> put_resp_header("stream-next-offset", actual_offset)
         |> put_resp_header("stream-up-to-date", "true")
         |> maybe_put_cursor_header(live, stream_id)
         |> maybe_put_closed_header(result.closed)
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, "[]")
+        |> send_resp(status, body)
 
       {:ok, result} ->
         # Parse each message as JSON and return array
