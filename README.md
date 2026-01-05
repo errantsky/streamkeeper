@@ -1,5 +1,8 @@
 # DurableStreams
 
+[![Hex.pm](https://img.shields.io/hexpm/v/durable_streams.svg)](https://hex.pm/packages/durable_streams)
+[![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/durable_streams)
+
 An Elixir/OTP implementation of the [Durable Streams](https://github.com/durable-streams/durable-streams) protocol - a specification for append-only, URL-addressable byte logs.
 
 ## Features
@@ -12,107 +15,10 @@ An Elixir/OTP implementation of the [Durable Streams](https://github.com/durable
 - ETag-based caching
 - OTP supervision tree for fault tolerance
 
-## Architecture
+## Requirements
 
-### Component Overview
-
-```mermaid
-graph TB
-    subgraph "HTTP Layer"
-        V1Plug[V1Plug Router]
-        Plug[Protocol.Plug]
-        Handlers[HTTP Handlers]
-    end
-
-    subgraph "Business Logic"
-        SM[StreamManager]
-        SS[StreamServer GenServer]
-    end
-
-    subgraph "Storage"
-        ETS[ETS Storage]
-        PubSub[Phoenix.PubSub]
-    end
-
-    subgraph "OTP Supervision"
-        App[Application]
-        Sup[StreamSupervisor]
-        Reg[Registry]
-    end
-
-    V1Plug --> Plug
-    Plug --> Handlers
-    Handlers --> SM
-    SM --> SS
-    SS --> ETS
-    SS --> PubSub
-    App --> Sup
-    App --> Reg
-    App --> ETS
-    Sup --> SS
-```
-
-### Request Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant P as Protocol.Plug
-    participant H as Handler
-    participant SM as StreamManager
-    participant SS as StreamServer
-    participant S as Storage.ETS
-
-    C->>P: PUT /v1/stream/:id
-    P->>H: Create Handler
-    H->>SM: create(id, opts)
-    SM->>SS: start_link
-    SS->>S: create(id, stream)
-    S-->>SS: :ok
-    SS-->>SM: {:ok, pid}
-    SM-->>H: {:ok, id}
-    H-->>C: 201 Created
-
-    C->>P: POST /v1/stream/:id
-    P->>H: Append Handler
-    H->>SM: append(id, data)
-    SM->>SS: GenServer.call(:append)
-    SS->>S: append(id, data)
-    S-->>SS: {:ok, offset}
-    SS-->>SM: {:ok, offset}
-    SM-->>H: {:ok, offset}
-    H-->>C: 200 OK + offset
-```
-
-### Long-Polling Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant H as Read Handler
-    participant SS as StreamServer
-    participant S as Storage
-    participant PS as PubSub
-
-    C->>H: GET ?offset=X&live=true
-    H->>SS: read(offset, live: true)
-    SS->>S: read(offset)
-    S-->>SS: {:ok, %{data: <<>>}}
-    Note over SS: No data, register waiter
-    SS->>SS: Add to waiters list
-
-    Note over C,PS: ... time passes ...
-
-    C->>SS: Another client appends
-    SS->>S: append(data)
-    S-->>SS: {:ok, new_offset}
-    SS->>PS: broadcast(:stream_append)
-    PS-->>SS: Notify waiters
-    SS->>S: read(offset)
-    S-->>SS: {:ok, %{data: ...}}
-    SS-->>H: {:ok, result}
-    H-->>C: 200 OK + data
-```
+- Elixir 1.15+
+- Erlang/OTP 26+
 
 ## Installation
 
@@ -121,12 +27,14 @@ Add `durable_streams` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:durable_streams, "~> 0.1.0"}
+    {:durable_streams, "~> 0.1.0"},
+    # Choose an HTTP server adapter:
+    {:plug_cowboy, "~> 2.7"}  # or {:bandit, "~> 1.0"}
   ]
 end
 ```
 
-## Usage
+## Quick Start
 
 ### Standalone Server
 
@@ -206,9 +114,7 @@ When a stream is created with `content-type: application/json`, it operates in J
 | `DELETE` | `/:stream_id` | Delete stream |
 | `HEAD` | `/:stream_id` | Get metadata |
 
-### Headers
-
-#### Request Headers
+### Request Headers
 
 | Header | Description |
 |--------|-------------|
@@ -218,7 +124,7 @@ When a stream is created with `content-type: application/json`, it operates in J
 | `Stream-Seq` | Sequence value for ordering |
 | `If-None-Match` | ETag for conditional GET |
 
-#### Response Headers
+### Response Headers
 
 | Header | Description |
 |--------|-------------|
@@ -247,7 +153,112 @@ config :durable_streams,
   default_timeout: 30_000
 ```
 
-## OTP Supervision Tree
+## Development
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/errantsky/durable_streams.git
+cd durable_streams
+
+# Install dependencies
+mix deps.get
+
+# Compile
+mix compile
+```
+
+### Running Tests
+
+```bash
+# Run unit tests
+mix test
+
+# Run with coverage
+mix test --cover
+```
+
+### Conformance Testing
+
+This library passes 100% of the official [Durable Streams conformance tests](https://github.com/durable-streams/durable-streams).
+
+**Prerequisites:**
+- Node.js 18+ (for the conformance test suite)
+
+**Running conformance tests:**
+
+```bash
+# Option 1: Use the mix task (recommended)
+mix durable_streams.conformance
+
+# Option 2: Manual setup
+# Install npm dependencies (first time only)
+cd conformance
+npm install
+cd ..
+
+# Start server in one terminal
+mix run -e 'Plug.Cowboy.http(DurableStreams.Protocol.V1Plug, [], port: 4437); Process.sleep(:infinity)'
+
+# Run tests in another terminal
+cd conformance
+npx @durable-streams/server-conformance-tests --run http://localhost:4437
+```
+
+**Current conformance: 131/131 tests passing (100%)**
+
+### Code Quality
+
+```bash
+# Format code
+mix format
+
+# Run static analysis (if credo is installed)
+mix credo
+```
+
+## Architecture
+
+### Component Overview
+
+```mermaid
+graph TB
+    subgraph "HTTP Layer"
+        V1Plug[V1Plug Router]
+        Plug[Protocol.Plug]
+        Handlers[HTTP Handlers]
+    end
+
+    subgraph "Business Logic"
+        SM[StreamManager]
+        SS[StreamServer GenServer]
+    end
+
+    subgraph "Storage"
+        ETS[ETS Storage]
+        PubSub[Phoenix.PubSub]
+    end
+
+    subgraph "OTP Supervision"
+        App[Application]
+        Sup[StreamSupervisor]
+        Reg[Registry]
+    end
+
+    V1Plug --> Plug
+    Plug --> Handlers
+    Handlers --> SM
+    SM --> SS
+    SS --> ETS
+    SS --> PubSub
+    App --> Sup
+    App --> Reg
+    App --> ETS
+    Sup --> SS
+```
+
+### OTP Supervision Tree
 
 ```mermaid
 graph TB
@@ -275,38 +286,68 @@ Each stream is managed by its own GenServer process, providing:
 - Concurrent access
 - Automatic cleanup on TTL expiration
 
-## Conformance Testing
+### Request Flow
 
-Run the official [Durable Streams conformance tests](https://github.com/durable-streams/durable-streams) to verify protocol compliance.
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant P as Protocol.Plug
+    participant H as Handler
+    participant SM as StreamManager
+    participant SS as StreamServer
+    participant S as Storage.ETS
 
-### Prerequisites
+    C->>P: PUT /v1/stream/:id
+    P->>H: Create Handler
+    H->>SM: create(id, opts)
+    SM->>SS: start_link
+    SS->>S: create(id, stream)
+    S-->>SS: :ok
+    SS-->>SM: {:ok, pid}
+    SM-->>H: {:ok, id}
+    H-->>C: 201 Created
 
-- Node.js 18+ (for running the conformance test suite)
-
-### Running Tests
-
-```bash
-# Install conformance test dependencies (first time only)
-cd conformance
-npm install
-cd ..
-
-# Start the server in one terminal
-mix run -e 'Plug.Cowboy.http(DurableStreams.Protocol.V1Plug, [], port: 4437); Process.sleep(:infinity)'
-
-# In another terminal, run conformance tests
-cd conformance
-npx @durable-streams/server-conformance-tests --run http://localhost:4437
+    C->>P: POST /v1/stream/:id
+    P->>H: Append Handler
+    H->>SM: append(id, data)
+    SM->>SS: GenServer.call(:append)
+    SS->>S: append(id, data)
+    S-->>SS: {:ok, offset}
+    SS-->>SM: {:ok, offset}
+    SM-->>H: {:ok, offset}
+    H-->>C: 200 OK + offset
 ```
 
-Alternatively, use the mix task (starts server automatically):
+### Long-Polling Flow
 
-```bash
-mix durable_streams.conformance
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant H as Read Handler
+    participant SS as StreamServer
+    participant S as Storage
+    participant PS as PubSub
+
+    C->>H: GET ?offset=X&live=true
+    H->>SS: read(offset, live: true)
+    SS->>S: read(offset)
+    S-->>SS: {:ok, %{data: <<>>}}
+    Note over SS: No data, register waiter
+    SS->>SS: Add to waiters list
+
+    Note over C,PS: ... time passes ...
+
+    C->>SS: Another client appends
+    SS->>S: append(data)
+    S-->>SS: {:ok, new_offset}
+    SS->>PS: broadcast(:stream_append)
+    PS-->>SS: Notify waiters
+    SS->>S: read(offset)
+    S-->>SS: {:ok, %{data: ...}}
+    SS-->>H: {:ok, result}
+    H-->>C: 200 OK + data
 ```
-
-Current conformance: **131/131 tests passing (100%)**
 
 ## License
 
-MIT License
+MIT License - see [LICENSE](LICENSE) for details.

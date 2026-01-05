@@ -13,7 +13,7 @@ defmodule DurableStreams.MixProject do
       deps: deps(),
 
       # Hex.pm
-      description: "Elixir implementation of the Durable Streams protocol",
+      description: "Elixir/OTP implementation of the Durable Streams protocol for append-only, URL-addressable byte logs with long-polling and SSE support",
       package: package(),
 
       # Docs
@@ -50,7 +50,9 @@ defmodule DurableStreams.MixProject do
       {:telemetry, "~> 1.2"},
 
       # Dev/Test
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -66,7 +68,7 @@ defmodule DurableStreams.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md"],
+      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
       source_ref: "v#{@version}"
     ]
   end

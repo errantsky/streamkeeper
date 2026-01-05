@@ -20,18 +20,16 @@ defmodule DurableStreams.Protocol.Handlers.Create do
     expires_at_header = get_req_header(conn, "stream-expires-at") |> List.first()
 
     # Validate TTL and Expires-At aren't both specified
-    cond do
-      ttl_header && expires_at_header ->
-        send_error(conn, 400, "Cannot specify both Stream-TTL and Stream-Expires-At")
+    if ttl_header && expires_at_header do
+      send_error(conn, 400, "Cannot specify both Stream-TTL and Stream-Expires-At")
+    else
+      case parse_expiry(ttl_header, expires_at_header) do
+        {:error, message} ->
+          send_error(conn, 400, message)
 
-      true ->
-        case parse_expiry(ttl_header, expires_at_header) do
-          {:error, message} ->
-            send_error(conn, 400, message)
-
-          {:ok, ttl, expires_at} ->
-            create_stream(conn, stream_id, content_type, ttl, expires_at)
-        end
+        {:ok, ttl, expires_at} ->
+          create_stream(conn, stream_id, content_type, ttl, expires_at)
+      end
     end
   end
 

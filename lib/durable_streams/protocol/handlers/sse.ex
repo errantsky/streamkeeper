@@ -199,11 +199,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
 
   defp build_data_event(data, offset) do
     # Handle newlines in data by prefixing each line with "data: "
-    lines = data
-    |> String.split("\n")
-    |> Enum.map(&"data: #{&1}")
-    |> Enum.join("\n")
-
+    lines = Enum.map_join(String.split(data, "\n"), "\n", &"data: #{&1}")
     "event: data\n#{lines}\nid: #{offset}\n\n"
   end
 
