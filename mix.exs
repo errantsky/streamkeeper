@@ -78,6 +78,9 @@ defmodule DurableStreams.MixProject do
           DurableStreams.Protocol.Plug,
           DurableStreams.Protocol.V1Plug
         ],
+        "Phoenix LiveView": [
+          DurableStreams.LiveView
+        ],
         "Data Types": [
           DurableStreams.Stream,
           DurableStreams.Offset

@@ -10,6 +10,7 @@ An Elixir/OTP implementation of the [Durable Streams](https://github.com/durable
 - Full HTTP protocol compliance (PUT, POST, GET, DELETE, HEAD)
 - JSON mode with array flattening
 - Long-polling and Server-Sent Events (SSE) for live updates
+- Phoenix LiveView helper module for easy integration
 - Stream TTL and expiration
 - Sequence ordering enforcement
 - ETag-based caching
@@ -115,6 +116,75 @@ end
 ```
 
 > **Note:** DurableStreams uses its own Phoenix.PubSub instance (`DurableStreams.PubSub`) which does not conflict with your application's PubSub.
+
+### Phoenix LiveView Integration
+
+For LiveView applications, use the `DurableStreams.LiveView` helper module to handle long-polling with automatic offset tracking and reconnection:
+
+```elixir
+defmodule MyAppWeb.EventsLive do
+  use Phoenix.LiveView
+  alias DurableStreams.LiveView, as: DSLive
+
+  def mount(_params, _session, socket) do
+    {:ok, DSLive.init(socket)}
+  end
+
+  def handle_event("subscribe", %{"stream_id" => stream_id}, socket) do
+    {:noreply, DSLive.listen(socket, stream_id)}
+  end
+
+  def handle_event("unsubscribe", _, socket) do
+    {:noreply, DSLive.stop(socket)}
+  end
+
+  # Handle stream messages
+  def handle_info(msg, socket) do
+    if DSLive.stream_message?(msg) do
+      case DSLive.handle_message(socket, msg) do
+        {:data, messages, socket} ->
+          {:noreply, process_messages(socket, messages)}
+
+        {:status, _status, socket} ->
+          {:noreply, socket}
+
+        {:complete, socket} ->
+          {:noreply, assign(socket, :finished, true)}
+
+        {:error, reason, socket} ->
+          {:noreply, assign(socket, :error, reason)}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp process_messages(socket, messages) do
+    Enum.reduce(messages, socket, fn msg, acc ->
+      update(acc, :events, &[msg.data | &1])
+    end)
+  end
+end
+```
+
+**Available functions:**
+
+| Function | Description |
+|----------|-------------|
+| `init/2` | Initialize stream assigns on socket |
+| `listen/3` | Start listening to a stream with offset tracking |
+| `stop/1` | Stop the listener, preserve stream ID and offset |
+| `reset/1` | Stop and clear all stream state |
+| `stream_message?/1` | Check if a message is from the stream listener |
+| `handle_message/2` | Process stream messages, returns `{:data, messages, socket}`, `{:status, status, socket}`, `{:complete, socket}`, or `{:error, reason, socket}` |
+| `status/1` | Get current status (`:idle`, `:connecting`, `:streaming`, `:disconnected`) |
+| `stream_id/1` | Get current stream ID |
+| `offset/1` | Get current offset |
+| `listening?/1` | Check if actively listening |
+
+The module uses `ds_` prefixed assigns (e.g., `@ds_status`, `@ds_stream_id`, `@ds_offset`) to avoid conflicts with your application's assigns.
+
+> **Note:** Requires `phoenix_live_view` as an optional dependency. The module is only compiled when Phoenix.LiveView is available.
 
 ### Programmatic API
 
