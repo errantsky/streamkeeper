@@ -35,25 +35,20 @@ defmodule DurableStreams.MixProject do
 
   defp deps do
     [
-      # HTTP - Plug for framework-agnostic routing
+      # Required dependencies (included in published package)
       {:plug, "~> 1.15"},
-      {:plug_cowboy, "~> 2.7", optional: true},
-      {:bandit, "~> 1.0", optional: true},
-
-      # PubSub for live updates
       {:phoenix_pubsub, "~> 2.1"},
 
-      # JSON - only used in dev/test (credo requires it; production uses Erlang :json)
+      # Optional HTTP server adapters - users choose one
+      {:plug_cowboy, "~> 2.7", optional: true},
+      {:bandit, "~> 1.6", optional: true},
+
+      # Development and test dependencies (not included in published package)
       {:jason, "~> 1.4", only: [:dev, :test]},
-
-      # Telemetry
-      {:telemetry, "~> 1.2"},
-
-      # Dev/Test
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
-      {:stream_data, "~> 1.0", only: [:dev, :test]}
+      {:stream_data, "~> 1.1", only: [:dev, :test], runtime: false}
     ]
   end
 
