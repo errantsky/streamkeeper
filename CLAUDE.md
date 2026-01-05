@@ -30,17 +30,33 @@ mix docs
 ## Testing Requirements
 
 **CRITICAL:** Always run `mix test` after making any code changes. The test suite includes:
-- 148 unit/integration tests
-- 15 property-based tests
+- Unit/integration tests (including retention tests)
+- Property-based tests
 - Protocol conformance verification
 
-All tests must pass before committing. Current status: **148 tests, 0 failures**
+All tests must pass before committing. Current status: **172 tests, 0 failures**
 
 For full protocol conformance testing:
 ```bash
 mix durable_streams.conformance
 ```
 This runs the official Durable Streams conformance suite (131/131 tests must pass).
+
+## Post-Change Checklist
+
+After making significant changes, verify:
+
+1. **Unit tests pass:** `mix test`
+2. **Conformance tests pass:** `mix durable_streams.conformance`
+3. **Code compiles without warnings:** `mix compile --warnings-as-errors`
+4. **Examples still work:**
+   - `elixir examples/simple_demo.exs`
+   - `iex examples/llm_streaming.exs` (check http://localhost:4000)
+5. **Documentation is updated:**
+   - `README.md` for user-facing changes
+   - `CHANGELOG.md` for all changes
+   - `CLAUDE.md` if project structure or key details change
+6. **No stale references:** Search for old module/function names if renaming
 
 ## Changelog Management
 
@@ -124,12 +140,13 @@ examples/
 
 ### Offset Format
 ```
-{timestamp_hex}-{sequence_hex}-{checksum_hex}
+{timestamp_us_hex}-{sequence_hex}-{random_hex}
 Example: 0006478b4bce37b5-0001-98ee
 ```
-- Lexicographically sortable
-- Unique per stream (checksum includes stream_id)
+- Lexicographically sortable (timestamp is microseconds since epoch)
+- Unique per append (random component prevents collisions)
 - Sentinel value `-1` means "start of stream"
+- Use `Offset.timestamp/1` to extract millisecond timestamp from offset
 
 ### JSON Mode
 When `Content-Type: application/json`:
@@ -145,6 +162,24 @@ Default timeout: 30 seconds. Waiters are notified via Phoenix.PubSub when new da
 
 ### Retention Policies
 Streams can have automatic retention with `max_age`, `max_messages`, or `max_bytes`. The `Retention.Scheduler` runs periodically (default: 30s) and spawns `Retention.Worker` tasks to compact streams. Compacted offsets return `410 Gone` with `Stream-Earliest-Offset` header.
+
+### HTTP Integration
+`DurableStreams.Protocol.Plug` is a composable Plug router. Users must forward to it from their own router:
+
+```elixir
+# Phoenix router
+forward "/v1/stream", DurableStreams.Protocol.Plug
+
+# Standalone
+defmodule MyRouter do
+  use Plug.Router
+  plug :match
+  plug :dispatch
+  forward "/v1/stream", to: DurableStreams.Protocol.Plug
+end
+```
+
+Note: There is no `V1Plug` - the path prefix is chosen by the user.
 
 ## Examples
 
