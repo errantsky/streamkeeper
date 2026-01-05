@@ -47,12 +47,74 @@ Start the HTTP server on a specific port:
 
 ### Phoenix Integration
 
-Forward requests from your Phoenix router:
+DurableStreams integrates seamlessly with Phoenix applications. The library starts its own supervision tree automatically when added as a dependency, so no additional setup is required beyond routing.
+
+**Step 1: Add the dependency**
 
 ```elixir
-# In your router.ex
-forward "/v1/stream", DurableStreams.Protocol.Plug
+# mix.exs
+def deps do
+  [
+    {:phoenix, "~> 1.7"},
+    {:durable_streams, "~> 0.1.0"},
+    # ... other deps
+  ]
+end
 ```
+
+**Step 2: Add the route**
+
+```elixir
+# lib/my_app_web/router.ex
+defmodule MyAppWeb.Router do
+  use MyAppWeb, :router
+
+  # Your existing pipelines...
+
+  # Forward durable streams requests (no pipeline needed - it handles its own parsing)
+  forward "/v1/stream", DurableStreams.Protocol.Plug
+end
+```
+
+**Step 3: Use it!**
+
+```bash
+# Create a stream
+curl -X PUT http://localhost:4000/v1/stream/my-stream \
+  -H "Content-Type: text/plain"
+
+# Append data
+curl -X POST http://localhost:4000/v1/stream/my-stream \
+  -H "Content-Type: text/plain" \
+  -d "Hello, Phoenix!"
+
+# Read data
+curl "http://localhost:4000/v1/stream/my-stream?offset=-1"
+```
+
+**Using the programmatic API in Phoenix contexts**
+
+You can also use the `DurableStreams` module directly in your Phoenix controllers, channels, or LiveViews:
+
+```elixir
+defmodule MyAppWeb.StreamController do
+  use MyAppWeb, :controller
+
+  def create(conn, %{"id" => stream_id}) do
+    case DurableStreams.create(stream_id, content_type: "application/json") do
+      {:ok, _} -> json(conn, %{status: "created", stream_id: stream_id})
+      {:error, :already_exists} -> json(conn, %{status: "exists", stream_id: stream_id})
+    end
+  end
+
+  def append(conn, %{"id" => stream_id, "data" => data}) do
+    {:ok, offset} = DurableStreams.append(stream_id, Jason.encode!(data))
+    json(conn, %{offset: offset})
+  end
+end
+```
+
+> **Note:** DurableStreams uses its own Phoenix.PubSub instance (`DurableStreams.PubSub`) which does not conflict with your application's PubSub.
 
 ### Programmatic API
 
