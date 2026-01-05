@@ -45,7 +45,7 @@ defmodule Mix.Tasks.DurableStreams.Conformance do
     # Start Cowboy HTTP server
     port = 4437
 
-    case Plug.Cowboy.http(DurableStreams.Protocol.Plug, [], port: port) do
+    case Plug.Cowboy.http(DurableStreams.Protocol.V1Plug, [], port: port) do
       {:ok, _pid} ->
         Mix.shell().info("Server started on http://localhost:#{port}")
 
@@ -72,7 +72,7 @@ defmodule Mix.Tasks.DurableStreams.Conformance do
       )
 
     # Stop the server
-    Plug.Cowboy.shutdown(DurableStreams.Protocol.Plug.HTTP)
+    Plug.Cowboy.shutdown(DurableStreams.Protocol.V1Plug.HTTP)
 
     if exit_code != 0 do
       Mix.raise("Conformance tests failed with exit code #{exit_code}")
