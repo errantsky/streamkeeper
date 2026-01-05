@@ -71,17 +71,7 @@ Features demonstrated:
 - **Multi-client broadcast** - Multiple tabs watch the same AI response in real-time
 - **Replay capability** - Re-watch the entire response from the beginning
 - **CDN-friendly design** - Offset-based URLs enable edge caching
-- **Multi-provider support** - Works with both Claude (Anthropic) and GPT (OpenAI)
-
-**Requirements:**
-
-Set at least one API key. If both are set, one is randomly chosen for each generation:
-
-```bash
-export ANTHROPIC_API_KEY=your-anthropic-key-here
-# and/or
-export OPENAI_API_KEY=your-openai-key-here
-```
+- **Multi-provider support** - Works with Claude (Anthropic), GPT (OpenAI), or Demo mode
 
 **Run:**
 ```bash
@@ -90,6 +80,17 @@ iex examples/llm_streaming.exs
 ```
 
 Then open http://localhost:4000 in your browser.
+
+**API Keys (Optional):**
+
+The example works without any API keys using **Demo mode**, which simulates streaming with pre-defined text. For real AI responses, set one or both:
+
+```bash
+export ANTHROPIC_API_KEY=your-anthropic-key-here
+export OPENAI_API_KEY=your-openai-key-here
+```
+
+If both are set, one is randomly chosen for each generation.
 
 **Try this:**
 1. Enter a prompt and click "Generate Response"

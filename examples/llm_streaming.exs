@@ -47,6 +47,16 @@ defmodule LLMStreamingLive do
 
   @default_prompt "Explain how durable streams make AI applications more reliable, in about 3 paragraphs."
 
+  @mock_response_text """
+  Durable streams fundamentally transform how AI applications handle the inherent unreliability of network connections. When a user is watching an AI response stream in, any interruption—whether from a network hiccup, a tab switch on mobile, or simply closing their laptop—traditionally means losing that response entirely. The user must start over, wasting both time and compute resources. Durable streams solve this by giving every token a unique, persistent offset, turning an ephemeral stream into a replayable log.
+
+  The architecture is elegantly simple: instead of streaming tokens directly to clients, the AI backend appends each token to a durable stream. Clients then read from this stream using their last known offset. If they disconnect and reconnect, they simply resume from where they left off—no tokens are lost, no regeneration is needed. This also enables powerful new patterns: multiple clients can watch the same response simultaneously, late joiners can replay from the beginning, and responses can be cached at the edge using standard HTTP semantics.
+
+  For production AI applications, this reliability is transformative. Consider a coding assistant generating a complex solution, or a customer service bot providing detailed instructions. Losing these responses mid-stream creates frustration and costs money. With durable streams, the infrastructure handles the complexity of connection management, letting developers focus on building great AI experiences. The protocol is simple HTTP—no WebSocket complexity, no special client libraries—just standard web infrastructure that scales naturally.
+
+  Beyond reliability, durable streams unlock observability and debugging capabilities that are impossible with ephemeral streams. Every token is logged with its offset, making it trivial to replay exactly what a user saw, investigate issues, or analyze response patterns. This durability-first approach represents a fundamental shift in how we think about real-time AI: not as fragile streams of data, but as persistent, addressable logs that clients can navigate at will.
+  """
+
   def mount(_params, _session, socket) do
     # Initialize socket state - handle_params will handle URL params after mount
     socket =
@@ -62,6 +72,7 @@ defmodule LLMStreamingLive do
       |> assign(:prompt, @default_prompt)
       |> assign(:error, nil)
       |> assign(:generation_status, nil)
+      |> assign(:demo_mode, false)
 
     {:ok, socket}
   end
@@ -91,6 +102,7 @@ defmodule LLMStreamingLive do
               |> assign(:generation_status, nil)
               |> assign(:resumed_from, nil)
               |> assign(:error, nil)
+              |> assign(:demo_mode, false)
             else
               socket
             end
@@ -166,6 +178,8 @@ defmodule LLMStreamingLive do
       @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
       .empty-state { color: #64748b; font-style: italic; }
       .error { background: #7f1d1d; border: 1px solid #dc2626; color: #fecaca; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+      .demo-banner { background: linear-gradient(135deg, #78350f, #451a03); border: 1px solid #d97706; color: #fef3c7; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+      .demo-banner strong { color: #fbbf24; }
       .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
       .feature-box { background: #0a0a0f; border-radius: 8px; padding: 16px; border-left: 3px solid #6366f1; }
       .feature-title { color: #a78bfa; font-weight: 600; margin-bottom: 8px; font-size: 14px; }
@@ -190,6 +204,12 @@ defmodule LLMStreamingLive do
 
       <%= if @error do %>
         <div class="error"><%= @error %></div>
+      <% end %>
+
+      <%= if @demo_mode do %>
+        <div class="demo-banner">
+          <strong>Demo Mode</strong> — Using simulated responses. Set ANTHROPIC_API_KEY or OPENAI_API_KEY for real AI responses.
+        </div>
       <% end %>
 
       <!-- Prompt Input Card -->
@@ -324,42 +344,50 @@ defmodule LLMStreamingLive do
         |> then(fn list -> if valid_key?(anthropic_key), do: [{:anthropic, anthropic_key} | list], else: list end)
         |> then(fn list -> if valid_key?(openai_key), do: [{:openai, openai_key} | list], else: list end)
 
-      if available_providers == [] do
-        {:noreply, assign(socket, :error, "No API key set. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY")}
-      else
-        # Randomly pick one of the available providers
-        {provider, api_key} = Enum.random(available_providers)
-
-        # Create a new stream for this response
-        stream_id = "llm-response-#{:erlang.system_time(:millisecond)}"
-
-        case DurableStreams.create(stream_id, content_type: "application/json") do
-          {:ok, _} ->
-            # Start the LLM streaming in a background process
-            parent = self()
-            spawn(fn -> stream_llm_response(parent, stream_id, prompt, provider, api_key) end)
-
-            socket =
-              socket
-              |> assign(:stream_id, stream_id)
-              |> assign(:tokens, [])
-              |> assign(:token_count, 0)
-              |> assign(:offset, "-1")
-              |> assign(:error, nil)
-              |> assign(:resumed_from, nil)
-              |> assign(:prompt, prompt)
-              |> assign(:generation_status, "Starting generation (#{provider})...")
-              |> start_listener()
-              |> push_patch(to: "/?stream=#{stream_id}")
-
-            {:noreply, socket}
-
-          {:error, reason} ->
-            {:noreply, assign(socket, :error, "Failed to create stream: #{inspect(reason)}")}
+      # Fall back to mock provider if no API keys are set
+      {provider, api_key} =
+        if available_providers == [] do
+          {:mock, nil}
+        else
+          Enum.random(available_providers)
         end
+
+      # Create a new stream for this response
+      stream_id = "llm-response-#{:erlang.system_time(:millisecond)}"
+
+      case DurableStreams.create(stream_id, content_type: "application/json") do
+        {:ok, _} ->
+          # Start the LLM streaming in a background process
+          parent = self()
+          spawn(fn -> stream_llm_response(parent, stream_id, prompt, provider, api_key) end)
+
+          provider_label = provider_display_name(provider)
+
+          socket =
+            socket
+            |> assign(:stream_id, stream_id)
+            |> assign(:tokens, [])
+            |> assign(:token_count, 0)
+            |> assign(:offset, "-1")
+            |> assign(:error, nil)
+            |> assign(:resumed_from, nil)
+            |> assign(:prompt, prompt)
+            |> assign(:generation_status, "Starting generation (#{provider_label})...")
+            |> assign(:demo_mode, provider == :mock)
+            |> start_listener()
+            |> push_patch(to: "/?stream=#{stream_id}")
+
+          {:noreply, socket}
+
+        {:error, reason} ->
+          {:noreply, assign(socket, :error, "Failed to create stream: #{inspect(reason)}")}
       end
     end
   end
+
+  defp provider_display_name(:anthropic), do: "Claude"
+  defp provider_display_name(:openai), do: "OpenAI"
+  defp provider_display_name(:mock), do: "Demo"
 
   defp valid_key?(nil), do: false
   defp valid_key?(""), do: false
@@ -548,12 +576,59 @@ defmodule LLMStreamingLive do
   end
 
   # Dispatch to appropriate LLM provider
+  defp stream_llm_response(parent, stream_id, _prompt, :mock, _api_key) do
+    stream_mock_response(parent, stream_id)
+  end
+
   defp stream_llm_response(parent, stream_id, prompt, :anthropic, api_key) do
     stream_claude_response(parent, stream_id, prompt, api_key)
   end
 
   defp stream_llm_response(parent, stream_id, prompt, :openai, api_key) do
     stream_openai_response(parent, stream_id, prompt, api_key)
+  end
+
+  # Stream mock response with simulated delays
+  defp stream_mock_response(parent, stream_id) do
+    Logger.info("[LLM] Starting mock streaming for stream: #{stream_id}")
+    send(parent, {:generation_status, "Connecting to Demo API..."})
+
+    # Small initial delay to simulate connection
+    Process.sleep(200)
+    send(parent, {:generation_status, "Response started..."})
+
+    # Split text into tokens (words and punctuation)
+    tokens = tokenize_for_streaming(@mock_response_text)
+
+    # Stream each token with realistic delays
+    Enum.each(tokens, fn token ->
+      token_msg = DurableStreams.JSON.encode!(%{"token" => token})
+      DurableStreams.append(stream_id, token_msg)
+      send(parent, {:generation_status, "Streaming tokens (Demo)..."})
+
+      # Variable delay: 20-60ms per token, slower for punctuation
+      delay = if String.match?(token, ~r/[.!?,;:]$/), do: :rand.uniform(80) + 40, else: :rand.uniform(40) + 20
+      Process.sleep(delay)
+    end)
+
+    # Mark stream as complete
+    Logger.info("[LLM] Mock streaming completed successfully")
+    DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "complete"}))
+    DurableStreams.close(stream_id)
+    send(parent, {:generation_status, "Generation complete"})
+  end
+
+  # Tokenize text for realistic streaming (preserves spaces with words)
+  defp tokenize_for_streaming(text) do
+    # Split into words but keep leading spaces attached
+    text
+    |> String.split(~r/(?=\s)/)
+    |> Enum.flat_map(fn part ->
+      case part do
+        "" -> []
+        _ -> [part]
+      end
+    end)
   end
 
   # Stream Claude response into the durable stream
@@ -817,9 +892,10 @@ unless Process.whereis(PhoenixPlayground.Endpoint) do
   end
 
   if not anthropic_set and not openai_set do
-    IO.puts("\n\e[31m  ⚠ No API keys set - please set at least one:\e[0m")
-    IO.puts("\e[33m    export ANTHROPIC_API_KEY=your-key-here\e[0m")
-    IO.puts("\e[33m    export OPENAI_API_KEY=your-key-here\e[0m")
+    IO.puts("\e[36m  ✓ Demo mode available (no API keys needed)\e[0m")
+    IO.puts("\e[90m    Set API keys for real AI responses:\e[0m")
+    IO.puts("\e[90m    export ANTHROPIC_API_KEY=your-key-here\e[0m")
+    IO.puts("\e[90m    export OPENAI_API_KEY=your-key-here\e[0m")
   end
 
   IO.puts("")
