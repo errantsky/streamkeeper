@@ -108,9 +108,12 @@ lib/
 │   ├── storage/
 │   │   ├── behaviour.ex         # Storage behaviour
 │   │   └── ets.ex               # ETS storage backend
+│   ├── retention/
+│   │   ├── supervisor.ex        # Retention subsystem supervisor
+│   │   ├── scheduler.ex         # Periodic compaction scheduler
+│   │   └── worker.ex            # Compaction worker (stateless)
 │   └── protocol/
 │       ├── plug.ex              # Main Plug router
-│       ├── v1_plug.ex           # V1 protocol router
 │       └── handlers/            # HTTP handlers (create, append, read, etc.)
 examples/
 ├── simple_demo.exs              # CLI API demo
@@ -139,6 +142,9 @@ When `Content-Type: application/json`:
 
 ### Long-Polling
 Default timeout: 30 seconds. Waiters are notified via Phoenix.PubSub when new data arrives.
+
+### Retention Policies
+Streams can have automatic retention with `max_age`, `max_messages`, or `max_bytes`. The `Retention.Scheduler` runs periodically (default: 30s) and spawns `Retention.Worker` tasks to compact streams. Compacted offsets return `410 Gone` with `Stream-Earliest-Offset` header.
 
 ## Examples
 
