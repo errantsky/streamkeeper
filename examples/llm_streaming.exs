@@ -45,6 +45,8 @@ defmodule LLMStreamingLive do
   use Phoenix.LiveView
   require Logger
 
+  alias DurableStreams.LiveView, as: DSLive
+
   @default_prompt "Explain how durable streams make AI applications more reliable, in about 3 paragraphs."
 
   @mock_response_text """
@@ -58,15 +60,11 @@ defmodule LLMStreamingLive do
   """
 
   def mount(_params, _session, socket) do
-    # Initialize socket state - handle_params will handle URL params after mount
+    # Initialize stream listener state via DSLive, plus app-specific state
     socket =
       socket
-      |> assign(:stream_id, nil)
+      |> DSLive.init()
       |> assign(:tokens, [])
-      |> assign(:status, :idle)
-      |> assign(:listener_ref, nil)
-      |> assign(:listener_monitor, nil)
-      |> assign(:offset, "-1")
       |> assign(:token_count, 0)
       |> assign(:resumed_from, nil)
       |> assign(:prompt, @default_prompt)
@@ -84,21 +82,18 @@ defmodule LLMStreamingLive do
       if connected?(socket) do
         case params do
           %{"stream" => stream_id} when stream_id != "" ->
-            if socket.assigns.stream_id != stream_id do
+            if DSLive.stream_id(socket) != stream_id do
               join_existing_stream(socket, stream_id)
             else
               socket
             end
           _ ->
             # No stream param - reset state if we had a stream before
-            if socket.assigns.stream_id do
+            if DSLive.stream_id(socket) do
               socket
-              |> stop_listener()
-              |> assign(:stream_id, nil)
+              |> DSLive.reset()
               |> assign(:tokens, [])
               |> assign(:token_count, 0)
-              |> assign(:offset, "-1")
-              |> assign(:status, :idle)
               |> assign(:generation_status, nil)
               |> assign(:resumed_from, nil)
               |> assign(:error, nil)
@@ -125,9 +120,8 @@ defmodule LLMStreamingLive do
         end
 
         socket
-        |> assign(:stream_id, stream_id)
         |> assign(:generation_status, status_msg)
-        |> start_listener()
+        |> DSLive.listen(stream_id)
 
       {:error, :not_found} ->
         assign(socket, :error, "Stream not found: #{stream_id}")
@@ -135,7 +129,7 @@ defmodule LLMStreamingLive do
   end
 
   def terminate(_reason, socket) do
-    stop_listener(socket)
+    DSLive.stop(socket)
     :ok
   end
 
@@ -218,18 +212,18 @@ defmodule LLMStreamingLive do
         <form phx-submit="submit_prompt">
           <textarea name="prompt" placeholder="Enter your prompt..." phx-update="ignore" id="prompt-input"><%= @prompt %></textarea>
           <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <button type="submit" class="btn btn-primary" disabled={@status in [:streaming, :connecting]}>
-              <%= if @status == :streaming, do: "Generating...", else: "Generate Response" %>
+            <button type="submit" class="btn btn-primary" disabled={@ds_status in [:streaming, :connecting]}>
+              <%= if @ds_status == :streaming, do: "Generating...", else: "Generate Response" %>
             </button>
-            <%= if @stream_id do %>
-              <span class="stream-id">Stream: <%= truncate_id(@stream_id) %></span>
+            <%= if @ds_stream_id do %>
+              <span class="stream-id">Stream: <%= truncate_id(@ds_stream_id) %></span>
             <% end %>
           </div>
         </form>
 
-        <%= if @stream_id do %>
+        <%= if @ds_stream_id do %>
           <div class="share-url">
-            Share URL: <%= "http://localhost:4000/?stream=#{@stream_id}" %>
+            Share URL: <%= "http://localhost:4000/?stream=#{@ds_stream_id}" %>
           </div>
         <% else %>
           <form phx-submit="join_stream" class="join-form">
@@ -245,8 +239,8 @@ defmodule LLMStreamingLive do
 
         <div class="status-bar">
           <div class="status">
-            <div class={"status-dot #{status_class(@status)}"}></div>
-            <span><%= status_text(@status) %></span>
+            <div class={"status-dot #{status_class(@ds_status)}"}></div>
+            <span><%= status_text(@ds_status) %></span>
           </div>
 
           <div class="stat">
@@ -256,14 +250,14 @@ defmodule LLMStreamingLive do
 
           <div class="stat">
             <span class="stat-label">Offset:</span>
-            <span class="stat-value"><%= truncate_offset(@offset) %></span>
+            <span class="stat-value"><%= truncate_offset(@ds_offset) %></span>
           </div>
 
           <div class="btn-group">
-            <%= if @status == :streaming or @status == :connected do %>
+            <%= if @ds_status == :streaming or @ds_status == :connecting do %>
               <button class="btn btn-danger" phx-click="disconnect">Disconnect</button>
             <% end %>
-            <%= if @status == :disconnected and @stream_id do %>
+            <%= if @ds_status == :disconnected and @ds_stream_id do %>
               <button class="btn btn-success" phx-click="resume">Resume</button>
               <button class="btn btn-secondary" phx-click="replay">Replay from Start</button>
             <% end %>
@@ -281,7 +275,7 @@ defmodule LLMStreamingLive do
           <%= if @tokens == [] do %>
             <span class="empty-state">Response will appear here as tokens stream in...</span>
           <% else %>
-            <%= for token <- Enum.reverse(@tokens) do %><%= token %><% end %><%= if @status == :streaming do %><span class="cursor"></span><% end %>
+            <%= for token <- Enum.reverse(@tokens) do %><%= token %><% end %><%= if @ds_status == :streaming do %><span class="cursor"></span><% end %>
           <% end %>
         </div>
 
@@ -365,16 +359,14 @@ defmodule LLMStreamingLive do
 
           socket =
             socket
-            |> assign(:stream_id, stream_id)
             |> assign(:tokens, [])
             |> assign(:token_count, 0)
-            |> assign(:offset, "-1")
             |> assign(:error, nil)
             |> assign(:resumed_from, nil)
             |> assign(:prompt, prompt)
             |> assign(:generation_status, "Starting generation (#{provider_label})...")
             |> assign(:demo_mode, provider == :mock)
-            |> start_listener()
+            |> DSLive.listen(stream_id)
             |> push_patch(to: "/?stream=#{stream_id}")
 
           {:noreply, socket}
@@ -394,33 +386,30 @@ defmodule LLMStreamingLive do
   defp valid_key?(_), do: true
 
   def handle_event("disconnect", _, socket) do
-    socket =
-      socket
-      |> stop_listener()
-      |> assign(:status, :disconnected)
-
-    {:noreply, socket}
+    {:noreply, DSLive.stop(socket)}
   end
 
   def handle_event("resume", _, socket) do
-    resumed_from = socket.assigns.offset
+    stream_id = DSLive.stream_id(socket)
+    resumed_from = DSLive.offset(socket)
 
     socket =
       socket
       |> assign(:resumed_from, resumed_from)
-      |> start_listener()
+      |> DSLive.listen(stream_id)
 
     {:noreply, socket}
   end
 
   def handle_event("replay", _, socket) do
+    stream_id = DSLive.stream_id(socket)
+
     socket =
       socket
       |> assign(:tokens, [])
       |> assign(:token_count, 0)
-      |> assign(:offset, "-1")
       |> assign(:resumed_from, nil)
-      |> start_listener()
+      |> DSLive.listen(stream_id, offset: "-1")
 
     {:noreply, socket}
   end
@@ -440,12 +429,45 @@ defmodule LLMStreamingLive do
     end
   end
 
-  # Handle messages from the listener process
-  def handle_info({:listener_status, status}, socket) do
-    {:noreply, assign(socket, :status, status)}
+  # Handle messages from the stream listener (via DSLive)
+  def handle_info(msg, socket) do
+    if DSLive.stream_message?(msg) do
+      case DSLive.handle_message(socket, msg) do
+        {:data, messages, socket} ->
+          {:noreply, process_stream_messages(socket, messages)}
+
+        {:status, _status, socket} ->
+          {:noreply, socket}
+
+        {:complete, socket} ->
+          {:noreply, assign(socket, :generation_status, "Generation complete")}
+
+        {:error, reason, socket} ->
+          {:noreply, assign(socket, :error, "Stream error: #{inspect(reason)}")}
+      end
+    else
+      handle_other_info(msg, socket)
+    end
   end
 
-  def handle_info({:new_tokens, messages, new_offset}, socket) do
+  defp handle_other_info({:generation_status, status}, socket) do
+    {:noreply, assign(socket, :generation_status, status)}
+  end
+
+  defp handle_other_info({:stream_error, error}, socket) do
+    {:noreply, assign(socket, :error, error)}
+  end
+
+  defp handle_other_info({:EXIT, _pid, _reason}, socket) do
+    {:noreply, socket}
+  end
+
+  defp handle_other_info(_msg, socket) do
+    {:noreply, socket}
+  end
+
+  # Process incoming stream messages and extract tokens
+  defp process_stream_messages(socket, messages) do
     {new_tokens, error} =
       Enum.reduce(messages, {[], nil}, fn msg, {tokens, err} ->
         case DurableStreams.JSON.decode(msg.data) do
@@ -465,114 +487,8 @@ defmodule LLMStreamingLive do
       socket
       |> assign(:tokens, Enum.reverse(new_tokens) ++ socket.assigns.tokens)
       |> assign(:token_count, socket.assigns.token_count + length(new_tokens))
-      |> assign(:offset, new_offset)
 
-    socket = if error, do: assign(socket, :error, error), else: socket
-
-    {:noreply, socket}
-  end
-
-  def handle_info({:generation_status, status}, socket) do
-    {:noreply, assign(socket, :generation_status, status)}
-  end
-
-  def handle_info({:stream_complete}, socket) do
-    socket =
-      socket
-      |> assign(:status, :disconnected)
-      |> assign(:generation_status, "Generation complete")
-
-    {:noreply, stop_listener(socket)}
-  end
-
-  def handle_info({:stream_error, error}, socket) do
-    {:noreply, assign(socket, :error, error)}
-  end
-
-  # Handle listener process dying unexpectedly
-  def handle_info({:DOWN, _ref, :process, _pid, reason}, socket) do
-    if reason != :normal and reason != :killed do
-      {:noreply, assign(socket, :status, :disconnected)}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  # Ignore any stray EXIT messages (from old linked processes)
-  def handle_info({:EXIT, _pid, _reason}, socket) do
-    {:noreply, socket}
-  end
-
-  # Start the long-poll listener (uses spawn + monitor instead of spawn_link)
-  defp start_listener(socket) do
-    # First stop any existing listener
-    socket = stop_listener(socket)
-
-    stream_id = socket.assigns.stream_id
-    offset = socket.assigns.offset
-
-    if stream_id do
-      parent = self()
-      pid = spawn(fn -> long_poll_loop(parent, stream_id, offset) end)
-      monitor_ref = Process.monitor(pid)
-
-      socket
-      |> assign(:listener_ref, pid)
-      |> assign(:listener_monitor, monitor_ref)
-      |> assign(:status, :connecting)
-    else
-      socket
-    end
-  end
-
-  defp stop_listener(socket) do
-    # Demonitor first to avoid receiving DOWN message
-    if socket.assigns[:listener_monitor] do
-      Process.demonitor(socket.assigns.listener_monitor, [:flush])
-    end
-
-    # Then kill the process
-    if socket.assigns[:listener_ref] do
-      Process.exit(socket.assigns.listener_ref, :kill)
-    end
-
-    socket
-    |> assign(:listener_ref, nil)
-    |> assign(:listener_monitor, nil)
-  end
-
-  # Long-poll loop
-  defp long_poll_loop(parent, stream_id, offset) do
-    Logger.debug("[LLM] Listener starting for stream: #{stream_id}, offset: #{offset}")
-    send(parent, {:listener_status, :streaming})
-    do_long_poll(parent, stream_id, offset)
-  end
-
-  defp do_long_poll(parent, stream_id, offset) do
-    case DurableStreams.StreamManager.read_messages(stream_id, offset, live: true, timeout: 30_000) do
-      {:ok, %{messages: [], closed: true}} ->
-        Logger.debug("[LLM] Stream closed, no more messages")
-        send(parent, {:stream_complete})
-
-      {:ok, %{messages: [], offset: new_offset}} ->
-        do_long_poll(parent, stream_id, new_offset)
-
-      {:ok, %{messages: messages, offset: new_offset, closed: closed}} ->
-        Logger.debug("[LLM] Received #{length(messages)} token(s), closed: #{closed}")
-        send(parent, {:new_tokens, messages, new_offset})
-
-        if closed do
-          send(parent, {:stream_complete})
-        else
-          do_long_poll(parent, stream_id, new_offset)
-        end
-
-      {:error, :not_found} ->
-        send(parent, {:listener_status, :disconnected})
-
-      {:error, _reason} ->
-        send(parent, {:listener_status, :disconnected})
-    end
+    if error, do: assign(socket, :error, error), else: socket
   end
 
   # Dispatch to appropriate LLM provider

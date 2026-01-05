@@ -43,6 +43,9 @@ defmodule DurableStreams.MixProject do
       {:plug_cowboy, "~> 2.7", optional: true},
       {:bandit, "~> 1.6", optional: true},
 
+      # Optional Phoenix LiveView integration
+      {:phoenix_live_view, "~> 1.0", optional: true},
+
       # Development and test dependencies (not included in published package)
       {:jason, "~> 1.4", only: [:dev, :test]},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
