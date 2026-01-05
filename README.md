@@ -348,6 +348,29 @@ sequenceDiagram
     H-->>C: 200 OK + data
 ```
 
+## Protocol Implementation Notes
+
+This library implements the [Durable Streams protocol specification](https://github.com/durable-streams/durable-streams/blob/main/PROTOCOL.md). Below are implementation-specific behaviors and minor differences from the reference specification.
+
+### Cursor Format
+
+The protocol suggests using 20-second time intervals from a fixed epoch for cursor values. This implementation uses millisecond timestamps instead, which still ensures:
+- Monotonically increasing values
+- Uniqueness across requests
+- Proper jitter handling when client echoes cursor back
+
+### Features Not Implemented
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `410 Gone` for dropped offsets | Not implemented | No retention policy; all data is kept until stream deletion |
+| `429 Too Many Requests` | Not implemented | Rate limiting is left to infrastructure (reverse proxy, load balancer) |
+| `501 Not Implemented` | Not needed | All protocol operations are supported |
+
+### Storage Backend
+
+Currently only ETS (in-memory) storage is provided. For production use with persistence requirements, a custom storage backend implementing `DurableStreams.Storage.Behaviour` should be used.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
