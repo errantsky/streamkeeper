@@ -1,0 +1,184 @@
+# Claude Code Context for Streamkeeper
+
+## Project Overview
+
+**Streamkeeper** is an Elixir/OTP implementation of the [Durable Streams protocol](https://github.com/durable-streams/durable-streams) - append-only, URL-addressable byte logs with long-polling and SSE support.
+
+- **Hex package name:** `streamkeeper`
+- **Module namespace:** `DurableStreams.*` (kept for clarity, doesn't match package name)
+- **Primary use case:** Resumable streaming for AI/LLM token streaming, real-time events
+
+## Key Commands
+
+```bash
+# Run tests (ALWAYS run after changes)
+mix test
+
+# Run conformance tests (requires Node.js)
+mix durable_streams.conformance
+
+# Build hex package
+mix hex.build
+
+# Publish to hex.pm
+mix hex.publish
+
+# Generate docs
+mix docs
+```
+
+## Testing Requirements
+
+**CRITICAL:** Always run `mix test` after making any code changes. The test suite includes:
+- 148 unit/integration tests
+- 15 property-based tests
+- Protocol conformance verification
+
+All tests must pass before committing. Current status: **148 tests, 0 failures**
+
+For full protocol conformance testing:
+```bash
+mix durable_streams.conformance
+```
+This runs the official Durable Streams conformance suite (131/131 tests must pass).
+
+## Changelog Management
+
+The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+
+**When making changes:**
+1. Update `CHANGELOG.md` with your changes under the appropriate section
+2. Use sections: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`
+3. Keep entries concise but descriptive
+
+**For releases:**
+1. Change `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`
+2. Add a new `[Unreleased]` section at the top
+3. Follow [Semantic Versioning](https://semver.org/):
+   - MAJOR: Breaking API changes
+   - MINOR: New features, backward compatible
+   - PATCH: Bug fixes, backward compatible
+
+## Release Process
+
+1. **Update version** in `mix.exs` (`@version`)
+2. **Update CHANGELOG.md** with release date
+3. **Run tests:** `mix test`
+4. **Commit:** `git commit -am "Release vX.Y.Z"`
+5. **Tag:** `git tag -a vX.Y.Z -m "vX.Y.Z - Description"`
+6. **Push:** `git push origin main && git push origin vX.Y.Z`
+7. **Publish:** `mix hex.publish`
+
+## Dependencies
+
+Keep dependencies up to date. Check for updates periodically:
+```bash
+mix hex.outdated
+```
+
+**Required dependencies:**
+- `plug` ~> 1.15
+- `phoenix_pubsub` ~> 2.1
+
+**Optional dependencies:**
+- `plug_cowboy` ~> 2.7 (HTTP server)
+- `bandit` ~> 1.6 (HTTP server alternative)
+- `phoenix_live_view` ~> 1.0 (for `DurableStreams.LiveView` helper)
+
+When updating dependencies:
+1. Update version in `mix.exs`
+2. Run `mix deps.get`
+3. Run `mix test` to verify compatibility
+4. Update CHANGELOG if significant
+
+## Project Structure
+
+```
+lib/
+├── durable_streams.ex           # Main API module
+├── durable_streams/
+│   ├── application.ex           # OTP application
+│   ├── stream_manager.ex        # Core stream operations
+│   ├── stream.ex                # Stream struct
+│   ├── offset.ex                # Offset generation/parsing
+│   ├── json.ex                  # JSON encoding/decoding
+│   ├── live_view.ex             # Phoenix LiveView helper (optional)
+│   ├── server/
+│   │   └── stream_server.ex     # Per-stream GenServer
+│   ├── storage/
+│   │   ├── behaviour.ex         # Storage behaviour
+│   │   └── ets.ex               # ETS storage backend
+│   └── protocol/
+│       ├── plug.ex              # Main Plug router
+│       ├── v1_plug.ex           # V1 protocol router
+│       └── handlers/            # HTTP handlers (create, append, read, etc.)
+examples/
+├── simple_demo.exs              # CLI API demo
+└── llm_streaming.exs            # LiveView + LLM streaming demo
+```
+
+## Key Implementation Details
+
+### Offset Format
+```
+{timestamp_hex}-{sequence_hex}-{checksum_hex}
+Example: 0006478b4bce37b5-0001-98ee
+```
+- Lexicographically sortable
+- Unique per stream (checksum includes stream_id)
+- Sentinel value `-1` means "start of stream"
+
+### JSON Mode
+When `Content-Type: application/json`:
+- Arrays are flattened ONE level: `[{a:1}, {b:2}]` stores 2 messages
+- Each message stored with its own offset
+- Empty arrays `[]` on POST return 400
+
+### LiveView Module
+`DurableStreams.LiveView` is conditionally compiled - only available when `phoenix_live_view` is installed. Uses `ds_` prefixed assigns to avoid conflicts.
+
+### Long-Polling
+Default timeout: 30 seconds. Waiters are notified via Phoenix.PubSub when new data arrives.
+
+## Examples
+
+The `examples/` directory uses Phoenix Playground for single-file demos:
+- **simple_demo.exs** - Run with `elixir examples/simple_demo.exs`
+- **llm_streaming.exs** - Run with `iex examples/llm_streaming.exs`, open http://localhost:4000
+
+Examples use `{:streamkeeper, path: "."}` for local development.
+
+## Common Tasks
+
+### Adding a new feature
+1. Implement the feature
+2. Add tests
+3. Run `mix test`
+4. Update CHANGELOG.md
+5. Update README.md if user-facing
+6. Commit with descriptive message
+
+### Fixing a bug
+1. Write a failing test that reproduces the bug
+2. Fix the bug
+3. Verify test passes
+4. Run full test suite
+5. Update CHANGELOG.md under `Fixed`
+6. Commit
+
+### Updating documentation
+1. Update relevant .md files
+2. Update `@moduledoc` / `@doc` in code
+3. Run `mix docs` to verify
+4. Commit
+
+## GitHub Repository
+
+- URL: https://github.com/errantsky/streamkeeper
+- Main branch: `main`
+- Releases tagged as `vX.Y.Z`
+
+## Hex.pm
+
+- Package: https://hex.pm/packages/streamkeeper
+- Docs: https://hexdocs.pm/streamkeeper
