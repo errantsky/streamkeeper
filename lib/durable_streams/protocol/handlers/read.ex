@@ -1,6 +1,14 @@
 defmodule DurableStreams.Protocol.Handlers.Read do
-  @moduledoc false
-  # Internal handler for GET requests to read from a stream.
+  @moduledoc """
+  Internal handler for GET requests to read from a stream.
+
+  Supports:
+  - Regular reads with offset parameter
+  - Long-polling with `live=true` parameter
+  - JSON mode for `application/json` streams
+
+  This is an internal module used by `DurableStreams.Protocol.Plug`.
+  """
 
   import Plug.Conn
   alias DurableStreams.{StreamManager, Offset, Stream}

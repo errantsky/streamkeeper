@@ -1,5 +1,9 @@
 defmodule DurableStreams.Protocol.Handlers.Head do
-  @moduledoc false
+  @moduledoc """
+  Internal handler for HEAD requests to get stream metadata.
+
+  This is an internal module used by `DurableStreams.Protocol.Plug`.
+  """
 
   import Plug.Conn
   alias DurableStreams.{StreamManager, Storage}

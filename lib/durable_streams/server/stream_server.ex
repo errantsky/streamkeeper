@@ -1,6 +1,21 @@
 defmodule DurableStreams.Server.StreamServer do
-  @moduledoc false
-  # Internal GenServer managing a single stream's lifecycle.
+  @moduledoc """
+  Internal GenServer managing a single stream's lifecycle.
+
+  Each stream is managed by its own GenServer process, providing:
+  - Process isolation for fault tolerance
+  - Stateful management of waiters for long-polling
+  - Automatic TTL expiration handling
+
+  ## OTP Concepts
+
+  - Uses `GenServer` for stateful stream management
+  - `handle_call` for synchronous operations (append, read, close)
+  - `handle_info` for PubSub messages and timeout handling
+  - Process registration via `Registry` for stream lookup
+
+  This is an internal module. Use `DurableStreams.StreamManager` for the public API.
+  """
 
   use GenServer, restart: :transient
 

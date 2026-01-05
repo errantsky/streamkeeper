@@ -86,11 +86,21 @@ defmodule DurableStreams.MixProject do
         Storage: [
           DurableStreams.Storage.Behaviour,
           DurableStreams.Storage.ETS
+        ],
+        Internals: [
+          DurableStreams.Server.StreamServer,
+          DurableStreams.Protocol.Handlers.Create,
+          DurableStreams.Protocol.Handlers.Append,
+          DurableStreams.Protocol.Handlers.Read,
+          DurableStreams.Protocol.Handlers.Delete,
+          DurableStreams.Protocol.Handlers.Head,
+          DurableStreams.Protocol.Handlers.SSE
         ]
       ],
       nest_modules_by_prefix: [
         DurableStreams.Protocol,
-        DurableStreams.Storage
+        DurableStreams.Storage,
+        DurableStreams.Server
       ]
     ]
   end

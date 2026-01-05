@@ -1,6 +1,12 @@
 defmodule DurableStreams.Protocol.Handlers.Create do
-  @moduledoc false
-  # Internal handler for PUT requests to create a new stream.
+  @moduledoc """
+  Internal handler for PUT requests to create a new stream.
+
+  Supports idempotent creation - if stream exists with the same config,
+  returns 200 OK. If config differs, returns 409 Conflict.
+
+  This is an internal module used by `DurableStreams.Protocol.Plug`.
+  """
 
   import Plug.Conn
   alias DurableStreams.{Stream, StreamManager}

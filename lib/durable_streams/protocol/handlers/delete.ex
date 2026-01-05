@@ -1,5 +1,9 @@
 defmodule DurableStreams.Protocol.Handlers.Delete do
-  @moduledoc false
+  @moduledoc """
+  Internal handler for DELETE requests to delete a stream.
+
+  This is an internal module used by `DurableStreams.Protocol.Plug`.
+  """
 
   import Plug.Conn
   alias DurableStreams.StreamManager

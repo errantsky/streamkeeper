@@ -1,6 +1,14 @@
 defmodule DurableStreams.Protocol.Handlers.Append do
-  @moduledoc false
-  # Internal handler for POST requests to append data to a stream.
+  @moduledoc """
+  Internal handler for POST requests to append data to a stream.
+
+  In JSON mode:
+  - Array POSTs are flattened one level (each element stored separately)
+  - Non-array POSTs store the entire JSON as one message
+  - Empty arrays are rejected with 400
+
+  This is an internal module used by `DurableStreams.Protocol.Plug`.
+  """
 
   import Plug.Conn
   alias DurableStreams.{StreamManager, Stream}
