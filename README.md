@@ -277,16 +277,32 @@ Each stream is managed by its own GenServer process, providing:
 
 ## Conformance Testing
 
-Run the official Durable Streams conformance tests:
+Run the official [Durable Streams conformance tests](https://github.com/durable-streams/durable-streams) to verify protocol compliance.
+
+### Prerequisites
+
+- Node.js 18+ (for running the conformance test suite)
+
+### Running Tests
 
 ```bash
-# Start the server
+# Install conformance test dependencies (first time only)
+cd conformance
+npm install
+cd ..
+
+# Start the server in one terminal
 mix run -e 'Plug.Cowboy.http(DurableStreams.Protocol.V1Plug, [], port: 4437); Process.sleep(:infinity)'
 
 # In another terminal, run conformance tests
 cd conformance
-npm install
 npx @durable-streams/server-conformance-tests --run http://localhost:4437
+```
+
+Alternatively, use the mix task (starts server automatically):
+
+```bash
+mix durable_streams.conformance
 ```
 
 Current conformance: **131/131 tests passing (100%)**
