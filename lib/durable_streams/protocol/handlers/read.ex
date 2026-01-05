@@ -183,7 +183,8 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   defp maybe_put_cursor_header(conn, _, _), do: conn
 
   defp put_cache_headers(conn, true), do: put_resp_header(conn, "cache-control", "no-cache")
-  defp put_cache_headers(conn, false), do: put_resp_header(conn, "cache-control", "public, max-age=60")
+  # Per protocol: catch-up reads should include stale-while-revalidate for better CDN behavior
+  defp put_cache_headers(conn, false), do: put_resp_header(conn, "cache-control", "public, max-age=60, stale-while-revalidate=300")
 
   defp generate_etag(stream_id, offset) do
     hash = :crypto.hash(:sha256, "#{stream_id}:#{offset}") |> Base.encode16(case: :lower)
