@@ -204,6 +204,33 @@ When a stream is created with `content-type: application/json`, it operates in J
 | `live` | Enable long-polling (`true`) or SSE (`sse`) |
 | `timeout` | Long-poll timeout in seconds |
 
+## Examples
+
+The `examples/` directory contains runnable demonstrations:
+
+### Simple Demo
+
+A command-line script showing core API usage:
+
+```bash
+elixir examples/simple_demo.exs
+```
+
+Shows stream creation, appending, reading, long-polling, and JSON mode.
+
+### Live Activity Stream
+
+An interactive Phoenix LiveView application:
+
+```bash
+iex examples/live_activity_stream.exs
+# Open http://localhost:4000
+```
+
+Demonstrates real-time event streaming across multiple browser tabs using Phoenix Playground.
+
+See [examples/README.md](examples/README.md) for more details.
+
 ## Configuration
 
 The library uses sensible defaults but can be configured:
