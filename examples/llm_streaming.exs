@@ -36,10 +36,13 @@ Mix.install([
   {:req, "~> 0.5"}
 ])
 
+require Logger
+
 # Only define the module if it doesn't already exist (prevents redefinition on hot reload)
 unless Code.ensure_loaded?(LLMStreamingLive) do
 defmodule LLMStreamingLive do
   use Phoenix.LiveView
+  require Logger
 
   @default_prompt "Explain how durable streams make AI applications more reliable, in about 3 paragraphs."
 
@@ -64,7 +67,7 @@ defmodule LLMStreamingLive do
 
   # Handle URL parameter changes (for push_patch and page refresh)
   def handle_params(params, _uri, socket) do
-    # Only join a stream when connected and we don't already have one
+    # Only handle stream changes when connected
     socket =
       if connected?(socket) do
         case params do
@@ -75,7 +78,21 @@ defmodule LLMStreamingLive do
               socket
             end
           _ ->
-            socket
+            # No stream param - reset state if we had a stream before
+            if socket.assigns.stream_id do
+              socket
+              |> stop_listener()
+              |> assign(:stream_id, nil)
+              |> assign(:tokens, [])
+              |> assign(:token_count, 0)
+              |> assign(:offset, "-1")
+              |> assign(:status, :idle)
+              |> assign(:generation_status, nil)
+              |> assign(:resumed_from, nil)
+              |> assign(:error, nil)
+            else
+              socket
+            end
         end
       else
         socket
@@ -483,6 +500,7 @@ defmodule LLMStreamingLive do
 
   # Long-poll loop
   defp long_poll_loop(parent, stream_id, offset) do
+    Logger.debug("[LLM] Listener starting for stream: #{stream_id}, offset: #{offset}")
     send(parent, {:listener_status, :streaming})
     do_long_poll(parent, stream_id, offset)
   end
@@ -490,12 +508,14 @@ defmodule LLMStreamingLive do
   defp do_long_poll(parent, stream_id, offset) do
     case DurableStreams.StreamManager.read_messages(stream_id, offset, live: true, timeout: 30_000) do
       {:ok, %{messages: [], closed: true}} ->
+        Logger.debug("[LLM] Stream closed, no more messages")
         send(parent, {:stream_complete})
 
       {:ok, %{messages: [], offset: new_offset}} ->
         do_long_poll(parent, stream_id, new_offset)
 
       {:ok, %{messages: messages, offset: new_offset, closed: closed}} ->
+        Logger.debug("[LLM] Received #{length(messages)} token(s), closed: #{closed}")
         send(parent, {:new_tokens, messages, new_offset})
 
         if closed do
@@ -514,6 +534,7 @@ defmodule LLMStreamingLive do
 
   # Stream Claude response into the durable stream
   defp stream_claude_response(parent, stream_id, prompt, api_key) do
+    Logger.info("[LLM] Starting Claude API request for stream: #{stream_id}")
     send(parent, {:generation_status, "Connecting to Claude API..."})
 
     url = "https://api.anthropic.com/v1/messages"
@@ -526,7 +547,7 @@ defmodule LLMStreamingLive do
 
     body =
       DurableStreams.JSON.encode!(%{
-        "model" => "claude-sonnet-4-20250514",
+        "model" => "claude-haiku-4-5",
         "max_tokens" => 1024,
         "stream" => true,
         "messages" => [
@@ -544,22 +565,26 @@ defmodule LLMStreamingLive do
            ) do
         {:ok, _response} ->
           # Mark stream as complete
+          Logger.info("[LLM] Claude API streaming completed successfully")
           DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "complete"}))
           DurableStreams.close(stream_id)
           send(parent, {:generation_status, "Generation complete"})
 
         {:error, %Req.TransportError{reason: reason}} ->
+          Logger.error("[LLM] Claude API transport error: #{inspect(reason)}")
           DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "Connection error: #{inspect(reason)}"}))
           DurableStreams.close(stream_id)
           send(parent, {:stream_error, "Connection error: #{inspect(reason)}"})
 
         {:error, reason} ->
+          Logger.error("[LLM] Claude API error: #{inspect(reason)}")
           DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "API error: #{inspect(reason)}"}))
           DurableStreams.close(stream_id)
           send(parent, {:stream_error, "API error: #{inspect(reason)}"})
       end
     rescue
       e ->
+        Logger.error("[LLM] Exception during API call: #{inspect(e)}")
         DurableStreams.append(stream_id, DurableStreams.JSON.encode!(%{"status" => "error", "error" => "Exception: #{inspect(e)}"}))
         DurableStreams.close(stream_id)
     end
@@ -567,7 +592,35 @@ defmodule LLMStreamingLive do
 
   # Handle SSE chunks from Claude API
   defp handle_sse_chunk(parent, stream_id, chunk, acc) do
-    # SSE format: "event: ...\ndata: {...}\n\n"
+    Logger.debug("[LLM] SSE chunk: #{byte_size(chunk)} bytes\n#{chunk}")
+
+    # Check if this is a direct JSON error (not SSE format)
+    # This happens when the API rejects the request before streaming starts
+    trimmed = String.trim(chunk)
+    if String.starts_with?(trimmed, "{") and String.contains?(trimmed, "error") do
+      case DurableStreams.JSON.decode(trimmed) do
+        {:ok, %{"type" => "error", "error" => %{"message" => message}}} ->
+          Logger.error("[LLM] API error: #{message}")
+          send(parent, {:stream_error, message})
+          {:cont, acc}
+
+        {:ok, %{"error" => %{"message" => message}}} ->
+          Logger.error("[LLM] API error: #{message}")
+          send(parent, {:stream_error, message})
+          {:cont, acc}
+
+        _ ->
+          parse_sse_lines(parent, stream_id, chunk)
+          {:cont, acc}
+      end
+    else
+      parse_sse_lines(parent, stream_id, chunk)
+      {:cont, acc}
+    end
+  end
+
+  # Parse SSE format: "event: ...\ndata: {...}\n\n"
+  defp parse_sse_lines(parent, stream_id, chunk) do
     lines = String.split(chunk, "\n")
 
     Enum.each(lines, fn line ->
@@ -583,19 +636,26 @@ defmodule LLMStreamingLive do
               send(parent, {:generation_status, "Streaming tokens..."})
 
             {:ok, %{"type" => "message_start"}} ->
+              Logger.debug("[LLM] Message started")
               send(parent, {:generation_status, "Response started..."})
 
             {:ok, %{"type" => "message_stop"}} ->
+              Logger.debug("[LLM] Message stopped")
               send(parent, {:generation_status, "Response complete"})
 
-            _ ->
-              :ok
+            {:ok, %{"type" => "error", "error" => %{"message" => message}}} ->
+              Logger.error("[LLM] API error in stream: #{message}")
+              send(parent, {:stream_error, message})
+
+            {:ok, other} ->
+              Logger.debug("[LLM] SSE event: #{inspect(other["type"])}")
+
+            {:error, _} ->
+              Logger.warning("[LLM] Failed to parse SSE data: #{json_str}")
           end
         end
       end
     end)
-
-    {:cont, acc}
   end
 
   # Helpers
