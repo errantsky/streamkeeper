@@ -39,12 +39,14 @@ defmodule LLMStreamingLive do
   @default_prompt "Explain how durable streams make AI applications more reliable, in about 3 paragraphs."
 
   def mount(_params, _session, socket) do
+    # Initialize socket state - handle_params will handle URL params after mount
     socket =
       socket
       |> assign(:stream_id, nil)
       |> assign(:tokens, [])
       |> assign(:status, :idle)
       |> assign(:listener_ref, nil)
+      |> assign(:listener_monitor, nil)
       |> assign(:offset, "-1")
       |> assign(:token_count, 0)
       |> assign(:resumed_from, nil)
@@ -53,6 +55,42 @@ defmodule LLMStreamingLive do
       |> assign(:generation_status, nil)
 
     {:ok, socket}
+  end
+
+  # Handle URL parameter changes (for push_patch and page refresh)
+  def handle_params(params, _uri, socket) do
+    # Only join a stream when connected and we don't already have one
+    socket =
+      if connected?(socket) do
+        case params do
+          %{"stream" => stream_id} when stream_id != "" ->
+            if socket.assigns.stream_id != stream_id do
+              join_existing_stream(socket, stream_id)
+            else
+              socket
+            end
+          _ ->
+            socket
+        end
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  # Join an existing stream (for page refresh or sharing)
+  defp join_existing_stream(socket, stream_id) do
+    case DurableStreams.get_metadata(stream_id) do
+      {:ok, meta} ->
+        socket
+        |> assign(:stream_id, stream_id)
+        |> assign(:generation_status, if(meta.closed, do: "Generation complete", else: "Joined existing stream"))
+        |> start_listener()
+
+      {:error, :not_found} ->
+        assign(socket, :error, "Stream not found: #{stream_id}")
+    end
   end
 
   def terminate(_reason, socket) do
@@ -107,6 +145,11 @@ defmodule LLMStreamingLive do
       .resumed-notice strong { color: #a78bfa; }
       .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
       .stream-id { font-family: monospace; font-size: 12px; color: #64748b; background: #0a0a0f; padding: 4px 8px; border-radius: 4px; }
+      .join-form { display: flex; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #2a2a3a; }
+      .join-form input { flex: 1; background: #0a0a0f; border: 1px solid #2a2a3a; color: #e2e8f0; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-family: monospace; }
+      .join-form input:focus { outline: none; border-color: #6366f1; }
+      .join-form input::placeholder { color: #64748b; }
+      .share-url { background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px 12px; font-family: monospace; font-size: 12px; color: #a78bfa; margin-top: 12px; word-break: break-all; }
     </style>
 
     <div class="container">
@@ -134,6 +177,17 @@ defmodule LLMStreamingLive do
             <% end %>
           </div>
         </form>
+
+        <%= if @stream_id do %>
+          <div class="share-url">
+            Share URL: <%= "http://localhost:4000/?stream=#{@stream_id}" %>
+          </div>
+        <% else %>
+          <form phx-submit="join_stream" class="join-form">
+            <input type="text" name="stream_id" placeholder="Enter stream ID to join existing stream..." />
+            <button type="submit" class="btn btn-secondary">Join Stream</button>
+          </form>
+        <% end %>
       </div>
 
       <!-- Response Card -->
@@ -257,6 +311,7 @@ defmodule LLMStreamingLive do
               |> assign(:prompt, prompt)
               |> assign(:generation_status, "Starting generation...")
               |> start_listener()
+              |> push_patch(to: "/?stream=#{stream_id}")
 
             {:noreply, socket}
 
@@ -297,6 +352,21 @@ defmodule LLMStreamingLive do
       |> start_listener()
 
     {:noreply, socket}
+  end
+
+  def handle_event("join_stream", %{"stream_id" => stream_id}, socket) do
+    stream_id = String.trim(stream_id)
+
+    if stream_id == "" do
+      {:noreply, assign(socket, :error, "Please enter a stream ID")}
+    else
+      socket =
+        socket
+        |> assign(:error, nil)
+        |> push_patch(to: "/?stream=#{stream_id}")
+
+      {:noreply, socket}
+    end
   end
 
   # Handle messages from the listener process
@@ -342,17 +412,36 @@ defmodule LLMStreamingLive do
     {:noreply, assign(socket, :error, error)}
   end
 
-  # Start the long-poll listener
+  # Handle listener process dying unexpectedly
+  def handle_info({:DOWN, _ref, :process, _pid, reason}, socket) do
+    if reason != :normal and reason != :killed do
+      {:noreply, assign(socket, :status, :disconnected)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # Ignore any stray EXIT messages (from old linked processes)
+  def handle_info({:EXIT, _pid, _reason}, socket) do
+    {:noreply, socket}
+  end
+
+  # Start the long-poll listener (uses spawn + monitor instead of spawn_link)
   defp start_listener(socket) do
+    # First stop any existing listener
+    socket = stop_listener(socket)
+
     stream_id = socket.assigns.stream_id
     offset = socket.assigns.offset
 
     if stream_id do
       parent = self()
-      ref = spawn_link(fn -> long_poll_loop(parent, stream_id, offset) end)
+      pid = spawn(fn -> long_poll_loop(parent, stream_id, offset) end)
+      monitor_ref = Process.monitor(pid)
 
       socket
-      |> assign(:listener_ref, ref)
+      |> assign(:listener_ref, pid)
+      |> assign(:listener_monitor, monitor_ref)
       |> assign(:status, :connecting)
     else
       socket
@@ -360,11 +449,19 @@ defmodule LLMStreamingLive do
   end
 
   defp stop_listener(socket) do
-    if socket.assigns.listener_ref do
-      Process.exit(socket.assigns.listener_ref, :shutdown)
+    # Demonitor first to avoid receiving DOWN message
+    if socket.assigns[:listener_monitor] do
+      Process.demonitor(socket.assigns.listener_monitor, [:flush])
     end
 
-    assign(socket, :listener_ref, nil)
+    # Then kill the process
+    if socket.assigns[:listener_ref] do
+      Process.exit(socket.assigns.listener_ref, :kill)
+    end
+
+    socket
+    |> assign(:listener_ref, nil)
+    |> assign(:listener_monitor, nil)
   end
 
   # Long-poll loop
