@@ -111,7 +111,7 @@ defmodule DurableStreams.Protocol.Handlers.Append do
         conn
         |> put_resp_header("stream-next-offset", last_offset)
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(%{offset: last_offset}))
+        |> send_resp(200, JSON.encode!(%{offset: last_offset}))
 
       {:error, :closed} ->
         send_error(conn, 409, "Stream is closed")
