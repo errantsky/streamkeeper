@@ -215,6 +215,25 @@ Use the `DurableStreams.StreamManager` module directly:
 :ok = DurableStreams.StreamManager.delete("my-stream")
 ```
 
+### Retention Policies
+
+Streams can have automatic retention policies that compact old messages:
+
+```elixir
+# Create a stream with retention policy
+{:ok, _} = DurableStreams.StreamManager.create("log-stream",
+  content_type: "text/plain",
+  retention: [
+    max_age: :timer.hours(24),     # Remove messages older than 24h
+    max_messages: 100_000,          # Keep at most 100k messages
+    max_bytes: 50 * 1024 * 1024    # Keep at most 50MB
+  ]
+)
+
+# When messages are compacted, reading old offsets returns 410 Gone
+# The response includes the earliest valid offset
+```
+
 ### JSON Mode
 
 When a stream is created with `content-type: application/json`, it operates in JSON mode:
@@ -526,11 +545,19 @@ The protocol suggests using 20-second time intervals from a fixed epoch for curs
 - Uniqueness across requests
 - Proper jitter handling when client echoes cursor back
 
+### Retention Policy Implementation
+
+Streams can have automatic retention policies that remove old messages based on:
+- **max_age**: Remove messages older than a specified duration (in milliseconds)
+- **max_messages**: Keep at most N messages in the stream
+- **max_bytes**: Keep at most N bytes of data in the stream
+
+When messages are compacted, requests for those offsets return `410 Gone` with a `Stream-Earliest-Offset` header indicating where valid data begins.
+
 ### Features Not Implemented
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `410 Gone` for dropped offsets | Not implemented | No retention policy; all data is kept until stream deletion |
 | `429 Too Many Requests` | Not implemented | Rate limiting is left to infrastructure (reverse proxy, load balancer) |
 | `501 Not Implemented` | Not needed | All protocol operations are supported |
 

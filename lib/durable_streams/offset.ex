@@ -70,4 +70,27 @@ defmodule DurableStreams.Offset do
   """
   @spec after?(t(), t()) :: boolean()
   def after?(offset, reference), do: compare(offset, reference) == :gt
+
+  @doc """
+  Extracts the timestamp (in milliseconds) from an offset.
+
+  Returns nil for the start offset (-1) or invalid offsets.
+  """
+  @spec timestamp(t()) :: non_neg_integer() | nil
+  def timestamp(@start), do: nil
+
+  def timestamp(offset) when is_binary(offset) do
+    case String.split(offset, "-") do
+      [timestamp_hex, _, _] ->
+        case Integer.parse(timestamp_hex, 16) do
+          {timestamp_us, ""} -> div(timestamp_us, 1000)
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  def timestamp(_), do: nil
 end

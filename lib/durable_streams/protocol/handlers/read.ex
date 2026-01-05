@@ -24,10 +24,15 @@ defmodule DurableStreams.Protocol.Handlers.Read do
       {:ok, offset} ->
         case StreamManager.get_metadata(stream_id) do
           {:ok, meta} ->
-            if Stream.json_mode?(meta) do
-              handle_json_read(conn, stream_id, offset, live, timeout, meta)
+            # Check if offset has been compacted (410 Gone)
+            if offset_compacted?(offset, meta.earliest_offset) do
+              send_gone(conn, meta.earliest_offset)
             else
-              handle_binary_read(conn, stream_id, offset, live, timeout, meta)
+              if Stream.json_mode?(meta) do
+                handle_json_read(conn, stream_id, offset, live, timeout, meta)
+              else
+                handle_binary_read(conn, stream_id, offset, live, timeout, meta)
+              end
             end
 
           {:error, :not_found} ->
@@ -37,6 +42,22 @@ defmodule DurableStreams.Protocol.Handlers.Read do
       {:error, message} ->
         send_error(conn, 400, message)
     end
+  end
+
+  # Check if the requested offset has been compacted
+  defp offset_compacted?(_offset, nil), do: false
+  defp offset_compacted?(offset, _earliest) when offset == "-1", do: false
+
+  defp offset_compacted?(offset, earliest_offset) do
+    # If offset is before earliest_offset, it's been compacted
+    Offset.compare(offset, earliest_offset) == :lt
+  end
+
+  defp send_gone(conn, earliest_offset) do
+    conn
+    |> put_resp_header("content-type", "application/json")
+    |> put_resp_header("stream-earliest-offset", earliest_offset || Offset.zero())
+    |> send_resp(410, JSON.encode!(%{error: "Offset no longer available", earliest_offset: earliest_offset}))
   end
 
   defp validate_offset(nil, _conn, live) do

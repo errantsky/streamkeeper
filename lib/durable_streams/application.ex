@@ -7,6 +7,7 @@ defmodule DurableStreams.Application do
   - Registry for stream process lookup
   - ETS storage backend
   - DynamicSupervisor for stream processes
+  - Retention supervisor for automatic compaction
   """
 
   use Application
@@ -24,7 +25,10 @@ defmodule DurableStreams.Application do
       DurableStreams.Storage.ETS,
 
       # DynamicSupervisor for spawning stream GenServers
-      {DynamicSupervisor, name: DurableStreams.StreamSupervisor, strategy: :one_for_one}
+      {DynamicSupervisor, name: DurableStreams.StreamSupervisor, strategy: :one_for_one},
+
+      # Retention supervisor for automatic compaction (scheduler + task supervisor)
+      DurableStreams.Retention.Supervisor
     ]
 
     opts = [strategy: :one_for_one, name: DurableStreams.Supervisor]
