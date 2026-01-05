@@ -1,7 +1,5 @@
 defmodule DurableStreams.Protocol.Handlers.Delete do
-  @moduledoc """
-  Handler for DELETE requests to delete a stream.
-  """
+  @moduledoc false
 
   import Plug.Conn
   alias DurableStreams.StreamManager

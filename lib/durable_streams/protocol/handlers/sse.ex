@@ -1,10 +1,6 @@
 defmodule DurableStreams.Protocol.Handlers.SSE do
-  @moduledoc """
-  Handler for GET requests with live=sse for Server-Sent Events.
-
-  Streams data to the client as SSE events, with control events
-  containing cursor and upToDate flags.
-  """
+  @moduledoc false
+  # Internal handler for GET requests with live=sse for Server-Sent Events.
 
   import Plug.Conn
   alias DurableStreams.{StreamManager, Stream, Offset}

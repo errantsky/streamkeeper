@@ -69,7 +69,29 @@ defmodule DurableStreams.MixProject do
     [
       main: "readme",
       extras: ["README.md", "CHANGELOG.md", "LICENSE"],
-      source_ref: "v#{@version}"
+      source_ref: "v#{@version}",
+      groups_for_modules: [
+        "Core API": [
+          DurableStreams,
+          DurableStreams.StreamManager
+        ],
+        "HTTP Integration": [
+          DurableStreams.Protocol.Plug,
+          DurableStreams.Protocol.V1Plug
+        ],
+        "Data Types": [
+          DurableStreams.Stream,
+          DurableStreams.Offset
+        ],
+        Storage: [
+          DurableStreams.Storage.Behaviour,
+          DurableStreams.Storage.ETS
+        ]
+      ],
+      nest_modules_by_prefix: [
+        DurableStreams.Protocol,
+        DurableStreams.Storage
+      ]
     ]
   end
 

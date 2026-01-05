@@ -1,7 +1,5 @@
 defmodule DurableStreams.Protocol.Handlers.Head do
-  @moduledoc """
-  Handler for HEAD requests to get stream metadata.
-  """
+  @moduledoc false
 
   import Plug.Conn
   alias DurableStreams.{StreamManager, Storage}

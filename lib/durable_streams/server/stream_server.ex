@@ -1,13 +1,6 @@
 defmodule DurableStreams.Server.StreamServer do
-  @moduledoc """
-  GenServer managing a single stream's lifecycle.
-
-  OTP Concepts:
-  - GenServer for stateful stream management
-  - handle_call for synchronous operations
-  - handle_info for pubsub messages and timeouts
-  - Process registration via Registry
-  """
+  @moduledoc false
+  # Internal GenServer managing a single stream's lifecycle.
 
   use GenServer, restart: :transient
 
