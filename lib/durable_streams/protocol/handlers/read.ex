@@ -11,7 +11,7 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   """
 
   import Plug.Conn
-  alias DurableStreams.{StreamManager, Offset, Stream}
+  alias DurableStreams.{JSON, StreamManager, Offset, Stream}
 
   def call(conn) do
     stream_id = conn.path_params["stream_id"]
@@ -138,7 +138,7 @@ defmodule DurableStreams.Protocol.Handlers.Read do
         # Parse each message as JSON and return array
         json_messages =
           Enum.map(result.messages, fn msg ->
-            case Jason.decode(msg.data) do
+            case JSON.decode(msg.data) do
               {:ok, parsed} -> parsed
               {:error, _} -> msg.data
             end
@@ -153,7 +153,7 @@ defmodule DurableStreams.Protocol.Handlers.Read do
         |> maybe_put_closed_header(result.closed)
         |> put_cache_headers(live)
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(json_messages))
+        |> send_resp(200, JSON.encode!(json_messages))
 
       {:error, :not_found} ->
         send_error(conn, 404, "Stream not found")
@@ -215,6 +215,6 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   defp send_error(conn, status, message) do
     conn
     |> put_resp_header("content-type", "application/json")
-    |> send_resp(status, Jason.encode!(%{error: message}))
+    |> send_resp(status, JSON.encode!(%{error: message}))
   end
 end

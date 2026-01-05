@@ -43,8 +43,8 @@ defmodule DurableStreams.MixProject do
       # PubSub for live updates
       {:phoenix_pubsub, "~> 2.1"},
 
-      # JSON
-      {:jason, "~> 1.4"},
+      # JSON - only used in dev/test for parsing responses (production uses Erlang :json)
+      {:jason, "~> 1.4", only: [:dev, :test]},
 
       # Telemetry
       {:telemetry, "~> 1.2"},

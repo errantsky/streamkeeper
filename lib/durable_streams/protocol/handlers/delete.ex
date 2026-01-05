@@ -6,7 +6,7 @@ defmodule DurableStreams.Protocol.Handlers.Delete do
   """
 
   import Plug.Conn
-  alias DurableStreams.StreamManager
+  alias DurableStreams.{JSON, StreamManager}
 
   def call(conn) do
     stream_id = conn.path_params["stream_id"]
@@ -18,7 +18,7 @@ defmodule DurableStreams.Protocol.Handlers.Delete do
       {:error, :not_found} ->
         conn
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(404, Jason.encode!(%{error: "Stream not found"}))
+        |> send_resp(404, JSON.encode!(%{error: "Stream not found"}))
     end
   end
 end

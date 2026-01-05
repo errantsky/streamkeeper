@@ -14,7 +14,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
   """
 
   import Plug.Conn
-  alias DurableStreams.{StreamManager, Stream, Offset}
+  alias DurableStreams.{JSON, StreamManager, Stream, Offset}
 
   def call(conn) do
     stream_id = conn.path_params["stream_id"]
@@ -24,7 +24,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
     if is_nil(offset) or offset == "" do
       conn
       |> put_resp_header("content-type", "application/json")
-      |> send_resp(400, Jason.encode!(%{error: "Offset parameter required for SSE"}))
+      |> send_resp(400, JSON.encode!(%{error: "Offset parameter required for SSE"}))
     else
       case StreamManager.get_metadata(stream_id) do
         {:ok, meta} ->
@@ -42,7 +42,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
         {:error, :not_found} ->
           conn
           |> put_resp_header("content-type", "application/json")
-          |> send_resp(404, Jason.encode!(%{error: "Stream not found"}))
+          |> send_resp(404, JSON.encode!(%{error: "Stream not found"}))
       end
     end
   end
@@ -103,9 +103,9 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
         # Has messages - send them, then continue looping
         last_offset =
           Enum.reduce_while(result.messages, offset, fn msg, _acc ->
-            json_data = case Jason.decode(msg.data) do
-              {:ok, parsed} -> Jason.encode!([parsed])
-              {:error, _} -> Jason.encode!([msg.data])
+            json_data = case JSON.decode(msg.data) do
+              {:ok, parsed} -> JSON.encode!([parsed])
+              {:error, _} -> JSON.encode!([msg.data])
             end
 
             event = build_data_event(json_data, msg.offset)
@@ -180,9 +180,9 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
         last_offset =
           Enum.reduce_while(result.messages, offset, fn msg, _acc ->
             # Parse JSON and wrap in array
-            json_data = case Jason.decode(msg.data) do
-              {:ok, parsed} -> Jason.encode!([parsed])
-              {:error, _} -> Jason.encode!([msg.data])
+            json_data = case JSON.decode(msg.data) do
+              {:ok, parsed} -> JSON.encode!([parsed])
+              {:error, _} -> JSON.encode!([msg.data])
             end
 
             event = build_data_event(json_data, msg.offset)
@@ -221,7 +221,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
     }
     control = if closed, do: Map.put(control, "closed", true), else: control
 
-    event = "event: control\ndata: #{Jason.encode!(control)}\n\n"
+    event = "event: control\ndata: #{JSON.encode!(control)}\n\n"
     chunk(conn, event)
   end
 

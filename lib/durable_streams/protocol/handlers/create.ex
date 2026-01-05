@@ -9,7 +9,7 @@ defmodule DurableStreams.Protocol.Handlers.Create do
   """
 
   import Plug.Conn
-  alias DurableStreams.{Stream, StreamManager}
+  alias DurableStreams.{JSON, Stream, StreamManager}
 
   def call(conn) do
     stream_id = conn.path_params["stream_id"]
@@ -116,7 +116,7 @@ defmodule DurableStreams.Protocol.Handlers.Create do
       content_type = get_req_header(conn, "content-type") |> List.first() || "application/octet-stream"
 
       if Stream.normalize_content_type(content_type) == "application/json" do
-        case Jason.decode(body) do
+        case JSON.decode(body) do
           {:ok, []} ->
             # Empty array - don't store anything
             :ok
@@ -124,7 +124,7 @@ defmodule DurableStreams.Protocol.Handlers.Create do
           {:ok, items} when is_list(items) ->
             # Non-empty array - store each item
             Enum.each(items, fn item ->
-              StreamManager.append(stream_id, Jason.encode!(item))
+              StreamManager.append(stream_id, JSON.encode!(item))
             end)
 
           {:ok, _single} ->
@@ -205,6 +205,6 @@ defmodule DurableStreams.Protocol.Handlers.Create do
   defp send_error(conn, status, message) do
     conn
     |> put_resp_header("content-type", "application/json")
-    |> send_resp(status, Jason.encode!(%{error: message}))
+    |> send_resp(status, JSON.encode!(%{error: message}))
   end
 end

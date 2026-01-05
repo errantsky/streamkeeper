@@ -11,7 +11,7 @@ defmodule DurableStreams.Protocol.Handlers.Append do
   """
 
   import Plug.Conn
-  alias DurableStreams.{StreamManager, Stream}
+  alias DurableStreams.{JSON, StreamManager, Stream}
 
   def call(conn) do
     stream_id = conn.path_params["stream_id"]
@@ -58,7 +58,7 @@ defmodule DurableStreams.Protocol.Handlers.Append do
         conn
         |> put_resp_header("stream-next-offset", offset)
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(%{offset: offset}))
+        |> send_resp(200, JSON.encode!(%{offset: offset}))
 
       {:error, :not_found} ->
         send_error(conn, 404, "Stream not found")
@@ -72,7 +72,7 @@ defmodule DurableStreams.Protocol.Handlers.Append do
   end
 
   defp handle_json_append(conn, stream_id, body, seq) do
-    case Jason.decode(body) do
+    case JSON.decode(body) do
       {:ok, items} when is_list(items) ->
         # Reject empty arrays
         if items == [] do
@@ -97,7 +97,7 @@ defmodule DurableStreams.Protocol.Handlers.Append do
       items
       |> Enum.with_index()
       |> Enum.reduce_while({:ok, nil}, fn {item, index}, _acc ->
-        encoded = Jason.encode!(item)
+        encoded = JSON.encode!(item)
         item_seq = if seq, do: increment_seq(seq, index), else: nil
 
         case StreamManager.append(stream_id, encoded, seq: item_seq) do
@@ -130,7 +130,7 @@ defmodule DurableStreams.Protocol.Handlers.Append do
         conn
         |> put_resp_header("stream-next-offset", offset)
         |> put_resp_header("content-type", "application/json")
-        |> send_resp(200, Jason.encode!(%{offset: offset}))
+        |> send_resp(200, JSON.encode!(%{offset: offset}))
 
       {:error, :not_found} ->
         send_error(conn, 404, "Stream not found")
@@ -176,6 +176,6 @@ defmodule DurableStreams.Protocol.Handlers.Append do
   defp send_error(conn, status, message) do
     conn
     |> put_resp_header("content-type", "application/json")
-    |> send_resp(status, Jason.encode!(%{error: message}))
+    |> send_resp(status, JSON.encode!(%{error: message}))
   end
 end
