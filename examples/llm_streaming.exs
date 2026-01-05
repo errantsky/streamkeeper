@@ -26,8 +26,8 @@
 #   3. Open another tab and click "Replay" to watch from the beginning
 #   4. Open multiple tabs and submit a prompt - all tabs see the same stream
 #
-# Note: Page refresh may restart Phoenix Playground and kill the generator.
-# For best results, use Disconnect/Resume or open new tabs instead of refreshing.
+# Note: This example uses Phoenix Playground with hot-reload guards to support
+# multiple browser tabs and page refreshes during streaming.
 
 Mix.install([
   {:phoenix_playground, "~> 0.1.8"},
