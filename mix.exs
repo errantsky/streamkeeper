@@ -2,22 +2,22 @@ defmodule DurableStreams.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/errantsky/durable_streams"
+  @source_url "https://github.com/errantsky/streamkeeper"
 
   def project do
     [
-      app: :durable_streams,
+      app: :streamkeeper,
       version: @version,
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
 
       # Hex.pm
-      description: "Elixir/OTP implementation of the Durable Streams protocol for append-only, URL-addressable byte logs with long-polling and SSE support",
+      description: "Streamkeeper - an Elixir/OTP implementation of the Durable Streams protocol for append-only, URL-addressable byte logs with long-polling and SSE support",
       package: package(),
 
       # Docs
-      name: "DurableStreams",
+      name: "Streamkeeper",
       source_url: @source_url,
       docs: docs(),
 

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2025-01-04
+## [0.1.0] - 2025-01-05
 
 ### Added
 
@@ -22,5 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `DurableStreams.StreamManager` programmatic API
 - `DurableStreams.Protocol.Plug` for Phoenix integration
 - `DurableStreams.Protocol.V1Plug` for standalone HTTP server
+- `DurableStreams.LiveView` helper module for Phoenix LiveView integration
 - `mix durable_streams.conformance` task for running conformance tests
 - 100% conformance with official Durable Streams protocol tests (131/131)
+
+### Notes
+
+- Package name is `streamkeeper`, module namespace is `DurableStreams`
+- Phoenix LiveView is an optional dependency (module only compiles when available)

@@ -28,7 +28,7 @@ defmodule Mix.Tasks.DurableStreams.Conformance do
     Mix.Task.run("compile")
 
     # Start the application
-    {:ok, _} = Application.ensure_all_started(:durable_streams)
+    {:ok, _} = Application.ensure_all_started(:streamkeeper)
 
     # Check if npm dependencies are installed
     conformance_dir = Path.join(File.cwd!(), "conformance")

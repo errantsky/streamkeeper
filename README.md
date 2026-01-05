@@ -1,7 +1,7 @@
-# DurableStreams
+# Streamkeeper
 
-[![Hex.pm](https://img.shields.io/hexpm/v/durable_streams.svg)](https://hex.pm/packages/durable_streams)
-[![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/durable_streams)
+[![Hex.pm](https://img.shields.io/hexpm/v/streamkeeper.svg)](https://hex.pm/packages/streamkeeper)
+[![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/streamkeeper)
 
 An Elixir/OTP implementation of the [Durable Streams](https://github.com/durable-streams/durable-streams) protocol - a specification for append-only, URL-addressable byte logs.
 
@@ -23,12 +23,12 @@ An Elixir/OTP implementation of the [Durable Streams](https://github.com/durable
 
 ## Installation
 
-Add `durable_streams` to your dependencies in `mix.exs`:
+Add `streamkeeper` to your dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:durable_streams, "~> 0.1.0"},
+    {:streamkeeper, "~> 0.1.0"},
     # Choose an HTTP server adapter:
     {:plug_cowboy, "~> 2.7"}  # or {:bandit, "~> 1.0"}
   ]
@@ -57,7 +57,7 @@ DurableStreams integrates seamlessly with Phoenix applications. The library star
 def deps do
   [
     {:phoenix, "~> 1.7"},
-    {:durable_streams, "~> 0.1.0"},
+    {:streamkeeper, "~> 0.1.0"},
     # ... other deps
   ]
 end
@@ -337,8 +337,8 @@ config :durable_streams,
 
 ```bash
 # Clone the repository
-git clone https://github.com/errantsky/durable_streams.git
-cd durable_streams
+git clone https://github.com/errantsky/streamkeeper.git
+cd streamkeeper
 
 # Install dependencies
 mix deps.get
