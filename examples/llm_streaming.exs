@@ -386,9 +386,11 @@ defmodule LLMStreamingLive do
       end)
       |> Enum.filter(&(&1 != ""))
 
+    # Tokens arrive in chronological order [oldest, ..., newest]
+    # We store as [newest, ..., oldest] so prepend reversed new_tokens
     socket =
       socket
-      |> assign(:tokens, new_tokens ++ socket.assigns.tokens)
+      |> assign(:tokens, Enum.reverse(new_tokens) ++ socket.assigns.tokens)
       |> assign(:token_count, socket.assigns.token_count + length(new_tokens))
       |> assign(:offset, new_offset)
 
