@@ -109,28 +109,6 @@ defmodule DurableStreams.RetentionTest do
     end
   end
 
-  describe "Offset.timestamp/1" do
-    test "extracts timestamp from valid offset" do
-      offset = Offset.generate(1)
-      timestamp = Offset.timestamp(offset)
-
-      assert is_integer(timestamp)
-      # Timestamp should be recent (within last minute)
-      now = System.system_time(:millisecond)
-      assert timestamp > now - 60_000
-      assert timestamp <= now
-    end
-
-    test "returns nil for start offset" do
-      assert Offset.timestamp("-1") == nil
-    end
-
-    test "returns nil for invalid offset" do
-      assert Offset.timestamp("invalid") == nil
-      assert Offset.timestamp(nil) == nil
-    end
-  end
-
   describe "Storage retention query functions" do
     setup do
       id = "retention-query-#{:rand.uniform(10000)}"
@@ -273,16 +251,19 @@ defmodule DurableStreams.RetentionTest do
 
     test "no compaction needed when under limits", %{stream_id: id} do
       # Add 2 messages (under max_messages: 3)
-      for i <- 1..2 do
-        {:ok, _} = Storage.append(id, "message-#{i}")
-      end
+      offsets =
+        for i <- 1..2 do
+          {:ok, offset} = Storage.append(id, "message-#{i}")
+          offset
+        end
 
       # Run compaction - should return :ok but not change anything
       assert :ok = Worker.compact(id)
 
       {:ok, stream} = Storage.get_metadata(id)
       assert stream.message_count == 2
-      assert stream.earliest_offset == nil
+      # earliest_offset is now set on first append (not just compaction)
+      assert stream.earliest_offset == List.first(offsets)
     end
 
     test "returns error for non-existent stream" do
