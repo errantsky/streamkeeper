@@ -304,9 +304,9 @@ defmodule DurableStreams.Storage.ETS do
 
   @impl GenServer
   def init(_opts) do
-    :ets.new(@meta_table, [:set, :public, :named_table, read_concurrency: true])
-    :ets.new(@data_table, [:ordered_set, :public, :named_table, read_concurrency: true])
-    :ets.new(@last_seq_table, [:set, :public, :named_table, read_concurrency: true])
+    :ets.new(@meta_table, [:set, :public, :named_table, read_concurrency: true, write_concurrency: true])
+    :ets.new(@data_table, [:ordered_set, :public, :named_table, read_concurrency: true, write_concurrency: true])
+    :ets.new(@last_seq_table, [:set, :public, :named_table, read_concurrency: true, write_concurrency: true])
     {:ok, %{}}
   end
 
