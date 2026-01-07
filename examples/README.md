@@ -4,8 +4,8 @@ This directory contains example applications demonstrating Streamkeeper (Durable
 
 ## Requirements
 
-- Elixir 1.15+
-- Erlang/OTP 27+ (for stdlib `:json` module)
+- Elixir 1.19+
+- Erlang/OTP 27+
 
 ## Examples
 

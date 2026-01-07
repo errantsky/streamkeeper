@@ -1,14 +1,14 @@
 defmodule DurableStreams.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/errantsky/streamkeeper"
 
   def project do
     [
       app: :streamkeeper,
       version: @version,
-      elixir: "~> 1.15",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
 

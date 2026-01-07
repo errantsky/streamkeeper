@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-06
+
 ### Changed
 
 - **BREAKING: Offset format redesigned** - Now uses `erlang:unique_integer([:monotonic, :positive])` formatted as 16-char hex instead of timestamp-sequence-random format
   - Offsets are now clock-independent and guaranteed monotonic
   - Old offsets from previous versions are incompatible
+- **BREAKING: Version requirements updated** - Now requires Elixir 1.19+ and Erlang/OTP 27+ (uses stdlib `:json` module)
 - **ETS storage optimized** - Data table key changed from `{stream_id, sequence}` to `{stream_id, offset_integer}` enabling O(log n) seeking via `ets:next/2` instead of O(n) full table scan
 - **ETS iteration refactored** - Unified iteration with `reduce_stream/3` and `reduce_stream_from/4` primitives (reduce_while pattern)
 - **O(1) offset lookups** - Stream struct now tracks `current_offset` and `earliest_offset` fields, eliminating ETS iteration for these lookups
@@ -19,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Code deduplication** - `read/2` and `read_messages/2` now share implementation via `read_internal/3`
 - Timestamps for retention are now stored separately in ETS, not extracted from offsets
 - Removed `@seq_table` ETS table (no longer needed)
+
+### Fixed
+
+- `list_streams_with_retention/0` now uses ETS match specification for efficient filtering instead of loading all streams into memory
 
 ### Removed
 

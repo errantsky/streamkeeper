@@ -18,8 +18,8 @@ An Elixir/OTP implementation of the [Durable Streams](https://github.com/durable
 
 ## Requirements
 
-- Elixir 1.15+
-- Erlang/OTP 26+
+- Elixir 1.19+
+- Erlang/OTP 27+
 
 ## Installation
 
@@ -28,7 +28,7 @@ Add `streamkeeper` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:streamkeeper, "~> 0.1.0"},
+    {:streamkeeper, "~> 0.3.0"},
     # Choose an HTTP server adapter:
     {:plug_cowboy, "~> 2.7"}  # or {:bandit, "~> 1.0"}
   ]
@@ -65,7 +65,7 @@ DurableStreams integrates seamlessly with Phoenix applications. The library star
 def deps do
   [
     {:phoenix, "~> 1.7"},
-    {:streamkeeper, "~> 0.1.0"},
+    {:streamkeeper, "~> 0.3.0"},
     # ... other deps
   ]
 end
@@ -255,7 +255,7 @@ When a stream is created with `content-type: application/json`, it operates in J
 # Arrays are flattened one level
 # POST [{"a": 1}, {"b": 2}] stores two messages
 {:ok, _} = DurableStreams.StreamManager.append("json-stream",
-  Jason.encode!([%{a: 1}, %{b: 2}])
+  DurableStreams.JSON.encode!([%{a: 1}, %{b: 2}])
 )
 
 # Read returns array of messages
