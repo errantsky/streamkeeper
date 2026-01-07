@@ -70,27 +70,51 @@ After making significant changes, verify:
 The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
 **When making changes:**
-1. Update `CHANGELOG.md` with your changes under the appropriate section
+1. Update `CHANGELOG.md` with your changes under `## [Unreleased]`
 2. Use sections: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`
 3. Keep entries concise but descriptive
-
-**For releases:**
-1. Change `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`
-2. Add a new `[Unreleased]` section at the top
-3. Follow [Semantic Versioning](https://semver.org/):
-   - MAJOR: Breaking API changes
-   - MINOR: New features, backward compatible
-   - PATCH: Bug fixes, backward compatible
+4. Only document user-facing changes (skip internal refactors, code style fixes)
 
 ## Release Process
 
-1. **Update version** in `mix.exs` (`@version`)
-2. **Update CHANGELOG.md** with release date
-3. **Run tests:** `mix test`
-4. **Commit:** `git commit -am "Release vX.Y.Z"`
-5. **Tag:** `git tag -a vX.Y.Z -m "vX.Y.Z - Description"`
-6. **Push:** `git push origin main && git push origin vX.Y.Z`
-7. **Publish:** `mix hex.publish`
+### 1. Determine Version Number
+
+Follow [Semantic Versioning](https://semver.org/):
+
+| Bump | When to use | Example |
+|------|-------------|---------|
+| MAJOR | Breaking API changes | Removing a public function, changing return types |
+| MINOR | New features (backward compatible) | Adding new options, new modules |
+| PATCH | Bug fixes (backward compatible) | Fixing incorrect behavior, security fixes |
+
+**Don't release for:** Internal tooling, code style, documentation-only changes.
+
+### 2. Pre-Release Checklist
+
+Run all quality checks before releasing:
+
+```bash
+mix test                           # All tests pass
+mix dialyzer                       # No type errors
+mix durable_streams.conformance    # Protocol conformance (131/131)
+mix compile --warnings-as-errors   # No compiler warnings
+```
+
+### 3. Update Version and Changelog
+
+1. Update `@version` in `mix.exs`
+2. Update `CHANGELOG.md`:
+   - Change `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`
+   - Add new empty `## [Unreleased]` section at top
+
+### 4. Commit, Tag, and Publish
+
+```bash
+git commit -am "Release vX.Y.Z"
+git tag -a vX.Y.Z -m "vX.Y.Z - Brief description"
+git push origin main && git push origin vX.Y.Z
+mix hex.publish
+```
 
 ## Dependencies
 
