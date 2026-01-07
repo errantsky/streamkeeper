@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **BREAKING: Offset format redesigned** - Now uses `erlang:unique_integer([:monotonic, :positive])` formatted as 16-char hex instead of timestamp-sequence-random format
+  - Offsets are now clock-independent and guaranteed monotonic
+  - Old offsets from previous versions are incompatible
+- **ETS storage optimized** - Data table key changed from `{stream_id, sequence}` to `{stream_id, offset_integer}` enabling O(log n) seeking via `ets:next/2` instead of O(n) full table scan
+- **ETS iteration refactored** - Unified iteration with `reduce_stream/3` and `reduce_stream_from/4` primitives (reduce_while pattern)
+- **O(1) offset lookups** - Stream struct now tracks `current_offset` and `earliest_offset` fields, eliminating ETS iteration for these lookups
+- **ETS concurrency improved** - Added `write_concurrency: true` to all ETS tables for better multi-stream throughput
+- **Code deduplication** - `read/2` and `read_messages/2` now share implementation via `read_internal/3`
+- Timestamps for retention are now stored separately in ETS, not extracted from offsets
+- Removed `@seq_table` ETS table (no longer needed)
+
+### Removed
+
+- `Offset.timestamp/1` function - offsets no longer contain timestamps
+- `Offset.generate/1` with sequence parameter - offsets are now generated without sequence input
+
+### Added
+
+- `Offset.to_integer/1` function - converts offset string to integer for ETS key operations
+
 ## [0.2.0] - 2025-01-05
 
 ### Added

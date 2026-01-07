@@ -34,7 +34,7 @@ mix docs
 - Property-based tests
 - Protocol conformance verification
 
-All tests must pass before committing. Current status: **172 tests, 0 failures**
+All tests must pass before committing. Current status: **175 tests, 15 properties, 0 failures**
 
 For full protocol conformance testing:
 ```bash
@@ -140,13 +140,14 @@ examples/
 
 ### Offset Format
 ```
-{timestamp_us_hex}-{sequence_hex}-{random_hex}
-Example: 0006478b4bce37b5-0001-98ee
+{monotonic_integer_hex}
+Example: 0000000000a1b2c3 (16 hex chars = 64 bits)
 ```
-- Lexicographically sortable (timestamp is microseconds since epoch)
-- Unique per append (random component prevents collisions)
+- Generated from `erlang:unique_integer([:monotonic, :positive])`
+- Zero-padded hex for lexicographic sortability
+- Clock-independent, guaranteed monotonic and unique
 - Sentinel value `-1` means "start of stream"
-- Use `Offset.timestamp/1` to extract millisecond timestamp from offset
+- Use `Offset.to_integer/1` to convert offset to integer for ETS operations
 
 ### JSON Mode
 When `Content-Type: application/json`:
