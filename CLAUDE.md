@@ -17,6 +17,10 @@ mix test
 # Run conformance tests (requires Node.js)
 mix durable_streams.conformance
 
+# Run benchmarks
+mix bench              # Run all benchmarks
+mix bench storage      # Run specific benchmark
+
 # Build hex package
 mix hex.build
 
@@ -101,6 +105,16 @@ mix hex.outdated
 - `bandit` ~> 1.6 (HTTP server alternative)
 - `phoenix_live_view` ~> 1.0 (for `DurableStreams.LiveView` helper)
 
+**Dev/test dependencies:**
+- `jason` ~> 1.4 (JSON encoding for tests)
+- `ex_doc` ~> 0.34 (documentation generation)
+- `credo` ~> 1.7 (code analysis)
+- `sobelow` ~> 0.13 (security analysis)
+- `stream_data` ~> 1.1 (property-based testing)
+- `benchee` ~> 1.3 (benchmarking)
+- `benchee_html` ~> 1.0 (HTML benchmark reports)
+- `benchee_markdown` ~> 0.3 (Markdown benchmark reports)
+
 When updating dependencies:
 1. Update version in `mix.exs`
 2. Run `mix deps.get`
@@ -134,6 +148,14 @@ lib/
 examples/
 ├── simple_demo.exs              # CLI API demo
 └── llm_streaming.exs            # LiveView + LLM streaming demo
+bench/
+├── config.exs                   # Benchmark configuration
+├── benchmarks/
+│   ├── concurrent_bench.exs     # Concurrent access benchmarks
+│   ├── offset_bench.exs         # Offset generation benchmarks
+│   ├── retention_bench.exs      # Retention policy benchmarks
+│   └── storage_bench.exs        # Storage operations benchmarks
+└── results/                     # Generated HTML/Markdown reports
 ```
 
 ## Key Implementation Details
