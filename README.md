@@ -5,6 +5,41 @@
 
 An Elixir/OTP implementation of the [Durable Streams](https://github.com/durable-streams/durable-streams) protocol - a specification for append-only, URL-addressable byte logs.
 
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+  - [Standalone Server](#standalone-server)
+  - [Phoenix Integration](#phoenix-integration)
+  - [Phoenix LiveView Integration](#phoenix-liveview-integration)
+  - [Programmatic API](#programmatic-api)
+  - [Retention Policies](#retention-policies)
+  - [JSON Mode](#json-mode)
+- [HTTP API](#http-api)
+  - [Request Headers](#request-headers)
+  - [Response Headers](#response-headers)
+  - [Query Parameters](#query-parameters)
+- [Examples](#examples)
+- [Configuration](#configuration)
+- [Development](#development)
+  - [Setup](#setup)
+  - [Running Tests](#running-tests)
+  - [Conformance Testing](#conformance-testing)
+  - [Code Quality](#code-quality)
+- [Architecture](#architecture)
+  - [Component Overview](#component-overview)
+  - [OTP Supervision Tree](#otp-supervision-tree)
+  - [Request Flow](#request-flow)
+  - [Long-Polling Flow](#long-polling-flow)
+- [Protocol Implementation Notes](#protocol-implementation-notes)
+  - [Cursor Format](#cursor-format)
+  - [Retention Policy Implementation](#retention-policy-implementation)
+  - [Features Not Implemented](#features-not-implemented)
+  - [Storage Backend](#storage-backend)
+- [License](#license)
+
 ## Features
 
 - Full HTTP protocol compliance (PUT, POST, GET, DELETE, HEAD)
