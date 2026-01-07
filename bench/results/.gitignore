@@ -1,0 +1,3 @@
+# Ignore benchmark results (regenerated on each run)
+*
+!.gitignore

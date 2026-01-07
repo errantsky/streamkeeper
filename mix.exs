@@ -51,7 +51,12 @@ defmodule DurableStreams.MixProject do
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
-      {:stream_data, "~> 1.1", only: [:dev, :test], runtime: false}
+      {:stream_data, "~> 1.1", only: [:dev, :test], runtime: false},
+
+      # Benchmarking
+      {:benchee, "~> 1.3", only: :dev},
+      {:benchee_html, "~> 1.0", only: :dev},
+      {:benchee_markdown, "~> 0.3", only: :dev}
     ]
   end
 
