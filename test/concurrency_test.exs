@@ -118,15 +118,17 @@ defmodule DurableStreams.ConcurrencyTest do
       results = Task.await_many(tasks, 5000)
 
       # Exactly one should succeed
-      successes = Enum.count(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+      successes =
+        Enum.count(results, fn
+          {:ok, _} -> true
+          _ -> false
+        end)
 
-      errors = Enum.count(results, fn
-        {:error, :already_exists} -> true
-        _ -> false
-      end)
+      errors =
+        Enum.count(results, fn
+          {:error, :already_exists} -> true
+          _ -> false
+        end)
 
       assert successes == 1
       assert errors == 9
@@ -140,14 +142,16 @@ defmodule DurableStreams.ConcurrencyTest do
       {:ok, _} = DurableStreams.append(id, "data before close")
 
       # Start a reader and closer concurrently
-      reader = Task.async(fn ->
-        :timer.sleep(1)
-        DurableStreams.read(id, "-1")
-      end)
+      reader =
+        Task.async(fn ->
+          :timer.sleep(1)
+          DurableStreams.read(id, "-1")
+        end)
 
-      closer = Task.async(fn ->
-        DurableStreams.close(id)
-      end)
+      closer =
+        Task.async(fn ->
+          DurableStreams.close(id)
+        end)
 
       {:ok, read_result} = Task.await(reader, 5000)
       :ok = Task.await(closer, 5000)
@@ -213,6 +217,7 @@ defmodule DurableStreams.ConcurrencyTest do
         assert String.contains?(result.data, "stream-#{id}")
         # Verify no other stream's data appears (check a different stream)
         other_ids = Enum.reject(stream_ids, &(&1 == id))
+
         for other_id <- other_ids do
           refute String.contains?(result.data, "stream-#{other_id}")
         end

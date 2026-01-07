@@ -90,9 +90,10 @@ defmodule DurableStreams.Server.StreamServerTest do
       {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
 
       # Start a waiter
-      reader = Task.async(fn ->
-        StreamServer.read(id, "-1", live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          StreamServer.read(id, "-1", live: true, timeout: 5000)
+        end)
 
       # Small delay then append
       :timer.sleep(50)
@@ -107,9 +108,10 @@ defmodule DurableStreams.Server.StreamServerTest do
       {:ok, offset} = StreamServer.append(id, "initial")
 
       # Start a waiter
-      reader = Task.async(fn ->
-        StreamServer.read(id, offset, live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          StreamServer.read(id, offset, live: true, timeout: 5000)
+        end)
 
       # Close the stream
       :timer.sleep(50)
@@ -164,9 +166,10 @@ defmodule DurableStreams.Server.StreamServerTest do
       {:ok, offset} = StreamServer.append(id, ~s({"init": true}))
 
       # Start a waiter for messages
-      reader = Task.async(fn ->
-        StreamServer.read_messages(id, offset, live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          StreamServer.read_messages(id, offset, live: true, timeout: 5000)
+        end)
 
       # Append new data
       :timer.sleep(50)
@@ -252,9 +255,10 @@ defmodule DurableStreams.Server.StreamServerTest do
       {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
 
       # The server should be subscribed - verify by checking that appends notify waiters
-      reader = Task.async(fn ->
-        StreamServer.read(id, "-1", live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          StreamServer.read(id, "-1", live: true, timeout: 5000)
+        end)
 
       :timer.sleep(50)
       {:ok, _} = StreamServer.append(id, "data")

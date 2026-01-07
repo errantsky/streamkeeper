@@ -113,7 +113,10 @@ defmodule DurableStreams.Protocol.PlugTest do
       assert conn.status == 200
       assert conn.resp_body == "Hello"
       assert get_resp_header(conn, "stream-next-offset") != []
-      assert get_resp_header(conn, "cache-control") == ["public, max-age=60, stale-while-revalidate=300"]
+
+      assert get_resp_header(conn, "cache-control") == [
+               "public, max-age=60, stale-while-revalidate=300"
+             ]
     end
 
     test "returns 200 with empty body when no data after offset", %{id: id} do

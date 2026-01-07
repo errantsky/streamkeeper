@@ -27,11 +27,11 @@ defmodule Mix.Tasks.DurableStreams.Conformance do
     @moduledoc false
     use Plug.Router
 
-    plug Plug.Logger
-    plug :match
-    plug :dispatch
+    plug(Plug.Logger)
+    plug(:match)
+    plug(:dispatch)
 
-    forward "/v1/stream", to: DurableStreams.Protocol.Plug
+    forward("/v1/stream", to: DurableStreams.Protocol.Plug)
 
     match _ do
       send_resp(conn, 404, "Not Found")

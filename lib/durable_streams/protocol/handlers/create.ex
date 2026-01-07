@@ -113,7 +113,8 @@ defmodule DurableStreams.Protocol.Handlers.Create do
 
     if byte_size(body) > 0 do
       # For JSON mode, need to check if it's an empty array
-      content_type = get_req_header(conn, "content-type") |> List.first() || "application/octet-stream"
+      content_type =
+        get_req_header(conn, "content-type") |> List.first() || "application/octet-stream"
 
       if Stream.normalize_content_type(content_type) == "application/json" do
         case JSON.decode(body) do

@@ -84,6 +84,7 @@ defmodule DurableStreams.Server.StreamServer do
   defp schedule_expiration(_ttl, %DateTime{} = expires_at) do
     now = DateTime.utc_now()
     diff_ms = DateTime.diff(expires_at, now, :millisecond)
+
     if diff_ms > 0 do
       Process.send_after(self(), :ttl_expired, diff_ms)
     else
@@ -171,10 +172,11 @@ defmodule DurableStreams.Server.StreamServer do
 
   @impl GenServer
   def handle_info({:waiter_timeout, from}, state) do
-    {waiter, remaining} = Enum.split_with(state.waiters, fn
-      {f, _, _} -> f == from
-      {f, _, _, _} -> f == from
-    end)
+    {waiter, remaining} =
+      Enum.split_with(state.waiters, fn
+        {f, _, _} -> f == from
+        {f, _, _, _} -> f == from
+      end)
 
     case waiter do
       [w] -> reply_to_waiter(w, state)
@@ -186,10 +188,11 @@ defmodule DurableStreams.Server.StreamServer do
 
   @impl GenServer
   def handle_info({:waiter_timeout_messages, from, _offset}, state) do
-    {waiter, remaining} = Enum.split_with(state.waiters, fn
-      {f, _, _} -> f == from
-      {f, _, _, _} -> f == from
-    end)
+    {waiter, remaining} =
+      Enum.split_with(state.waiters, fn
+        {f, _, _} -> f == from
+        {f, _, _, _} -> f == from
+      end)
 
     case waiter do
       [w] -> reply_to_waiter(w, state)

@@ -6,7 +6,7 @@ defmodule DurableStreams.PropertyTest do
 
   describe "Offset properties" do
     property "generated offsets are always greater than start offset" do
-      check all data <- binary(min_length: 1) do
+      check all(data <- binary(min_length: 1)) do
         id = "prop-offset-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
 
@@ -19,7 +19,7 @@ defmodule DurableStreams.PropertyTest do
     end
 
     property "sequential offsets maintain ordering" do
-      check all data_list <- list_of(binary(min_length: 1), min_length: 2, max_length: 10) do
+      check all(data_list <- list_of(binary(min_length: 1), min_length: 2, max_length: 10)) do
         id = "prop-seq-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
 
@@ -46,7 +46,7 @@ defmodule DurableStreams.PropertyTest do
 
   describe "append and read roundtrip" do
     property "appended data is readable" do
-      check all data <- binary(min_length: 1, max_length: 1000) do
+      check all(data <- binary(min_length: 1, max_length: 1000)) do
         id = "prop-roundtrip-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "application/octet-stream")
 
@@ -60,7 +60,10 @@ defmodule DurableStreams.PropertyTest do
     end
 
     property "multiple appends concatenate correctly" do
-      check all data_list <- list_of(binary(min_length: 1, max_length: 100), min_length: 1, max_length: 20) do
+      check all(
+              data_list <-
+                list_of(binary(min_length: 1, max_length: 100), min_length: 1, max_length: 20)
+            ) do
         id = "prop-concat-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "application/octet-stream")
 
@@ -78,8 +81,10 @@ defmodule DurableStreams.PropertyTest do
     end
 
     property "reading from offset returns only subsequent data" do
-      check all [first | rest] = data_list <-
-                  list_of(binary(min_length: 1, max_length: 100), min_length: 2, max_length: 10) do
+      check all(
+              [first | rest] = data_list <-
+                list_of(binary(min_length: 1, max_length: 100), min_length: 2, max_length: 10)
+            ) do
         id = "prop-offset-read-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "application/octet-stream")
 
@@ -101,7 +106,10 @@ defmodule DurableStreams.PropertyTest do
 
   describe "message-based reads" do
     property "read_messages returns individual messages" do
-      check all messages <- list_of(binary(min_length: 1, max_length: 100), min_length: 1, max_length: 20) do
+      check all(
+              messages <-
+                list_of(binary(min_length: 1, max_length: 100), min_length: 1, max_length: 20)
+            ) do
         id = "prop-messages-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "application/json")
 
@@ -127,7 +135,15 @@ defmodule DurableStreams.PropertyTest do
 
   describe "stream metadata" do
     property "content_type is preserved" do
-      check all content_type <- member_of(["text/plain", "application/json", "application/octet-stream", "text/html"]) do
+      check all(
+              content_type <-
+                member_of([
+                  "text/plain",
+                  "application/json",
+                  "application/octet-stream",
+                  "text/html"
+                ])
+            ) do
         id = "prop-content-type-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: content_type)
 
@@ -140,7 +156,7 @@ defmodule DurableStreams.PropertyTest do
     end
 
     property "stream id is preserved" do
-      check all suffix <- string(:alphanumeric, min_length: 1, max_length: 50) do
+      check all(suffix <- string(:alphanumeric, min_length: 1, max_length: 50)) do
         id = "prop-id-#{suffix}-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
 
@@ -155,7 +171,7 @@ defmodule DurableStreams.PropertyTest do
 
   describe "closed stream behavior" do
     property "closed streams reject appends" do
-      check all data <- binary(min_length: 1) do
+      check all(data <- binary(min_length: 1)) do
         id = "prop-closed-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
         :ok = DurableStreams.close(id)
@@ -169,7 +185,7 @@ defmodule DurableStreams.PropertyTest do
     end
 
     property "closed streams are still readable" do
-      check all data <- binary(min_length: 1) do
+      check all(data <- binary(min_length: 1)) do
         id = "prop-closed-read-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
         {:ok, _} = DurableStreams.append(id, data)
@@ -187,7 +203,7 @@ defmodule DurableStreams.PropertyTest do
 
   describe "sequence enforcement" do
     property "seq values must be unique" do
-      check all seq <- string(:alphanumeric, min_length: 1, max_length: 20) do
+      check all(seq <- string(:alphanumeric, min_length: 1, max_length: 20)) do
         id = "prop-seq-unique-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
 
@@ -201,7 +217,13 @@ defmodule DurableStreams.PropertyTest do
     end
 
     property "seq values enforce ordering" do
-      check all seqs <- list_of(string(:alphanumeric, min_length: 1, max_length: 10), min_length: 2, max_length: 10) do
+      check all(
+              seqs <-
+                list_of(string(:alphanumeric, min_length: 1, max_length: 10),
+                  min_length: 2,
+                  max_length: 10
+                )
+            ) do
         # Remove duplicates for this test
         seqs = Enum.uniq(seqs)
 
@@ -225,7 +247,7 @@ defmodule DurableStreams.PropertyTest do
 
   describe "TTL configuration" do
     property "TTL creates valid expires_at" do
-      check all ttl <- positive_integer() |> filter(&(&1 <= 86_400)) do
+      check all(ttl <- positive_integer() |> filter(&(&1 <= 86_400))) do
         id = "prop-ttl-#{System.unique_integer([:positive])}"
         before = DateTime.utc_now()
 
@@ -250,7 +272,7 @@ defmodule DurableStreams.PropertyTest do
 
   describe "data integrity" do
     property "binary data is preserved exactly" do
-      check all data <- binary(min_length: 0, max_length: 10_000) do
+      check all(data <- binary(min_length: 0, max_length: 10_000)) do
         id = "prop-binary-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "application/octet-stream")
 
@@ -265,7 +287,7 @@ defmodule DurableStreams.PropertyTest do
     end
 
     property "unicode data is preserved" do
-      check all text <- string(:printable) do
+      check all(text <- string(:printable)) do
         id = "prop-unicode-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "text/plain")
 

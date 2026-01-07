@@ -35,9 +35,12 @@ defmodule DurableStreams.Protocol.Handlers.Head do
   defp maybe_put_closed_header(conn, _), do: conn
 
   defp maybe_put_ttl_header(conn, nil), do: conn
-  defp maybe_put_ttl_header(conn, ttl), do: put_resp_header(conn, "stream-ttl", Integer.to_string(ttl))
+
+  defp maybe_put_ttl_header(conn, ttl),
+    do: put_resp_header(conn, "stream-ttl", Integer.to_string(ttl))
 
   defp maybe_put_expires_at_header(conn, nil), do: conn
+
   defp maybe_put_expires_at_header(conn, expires_at) do
     put_resp_header(conn, "stream-expires-at", DateTime.to_iso8601(expires_at))
   end

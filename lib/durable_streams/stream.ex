@@ -95,15 +95,22 @@ defmodule DurableStreams.Stream do
 
   defp parse_retention_policy(nil), do: nil
   defp parse_retention_policy([]), do: nil
+
   defp parse_retention_policy(opts) when is_list(opts) do
     policy = %{}
     policy = if opts[:max_age], do: Map.put(policy, :max_age, opts[:max_age]), else: policy
-    policy = if opts[:max_messages], do: Map.put(policy, :max_messages, opts[:max_messages]), else: policy
+
+    policy =
+      if opts[:max_messages],
+        do: Map.put(policy, :max_messages, opts[:max_messages]),
+        else: policy
+
     policy = if opts[:max_bytes], do: Map.put(policy, :max_bytes, opts[:max_bytes]), else: policy
     if map_size(policy) == 0, do: nil, else: policy
   end
 
   defp compute_expires_at(nil, _now), do: nil
+
   defp compute_expires_at(ttl, now) when is_integer(ttl) do
     DateTime.add(now, ttl, :second)
   end
@@ -119,9 +126,12 @@ defmodule DurableStreams.Stream do
   @spec json_mode?(t()) :: boolean()
   def json_mode?(%__MODULE__{content_type: content_type}) do
     # Handle charset parameter (e.g., "application/json; charset=utf-8")
-    base_type = content_type |> String.split(";") |> List.first() |> String.trim() |> String.downcase()
+    base_type =
+      content_type |> String.split(";") |> List.first() |> String.trim() |> String.downcase()
+
     base_type == "application/json"
   end
+
   def json_mode?(_), do: false
 
   @doc """

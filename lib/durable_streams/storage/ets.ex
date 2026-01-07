@@ -42,6 +42,7 @@ defmodule DurableStreams.Storage.ETS do
 
       [{^stream_id, %{earliest_offset: offset}}] ->
         key = {stream_id, Offset.to_integer(offset)}
+
         case :ets.lookup(@data_table, key) do
           [{_key, _data, timestamp}] -> {:ok, timestamp}
           [] -> {:error, :no_messages}
@@ -70,8 +71,8 @@ defmodule DurableStreams.Storage.ETS do
   @spec find_offset_after_n_messages(String.t(), non_neg_integer()) :: String.t() | nil
   def find_offset_after_n_messages(stream_id, n) do
     case reduce_stream(stream_id, 0, fn {{_, offset_int}, _, _}, idx ->
-      if idx == n, do: {:halt, {:found, int_to_offset(offset_int)}}, else: {:cont, idx + 1}
-    end) do
+           if idx == n, do: {:halt, {:found, int_to_offset(offset_int)}}, else: {:cont, idx + 1}
+         end) do
       {:found, offset} -> offset
       _ -> nil
     end
@@ -84,9 +85,12 @@ defmodule DurableStreams.Storage.ETS do
   @spec find_offset_after_n_bytes(String.t(), non_neg_integer()) :: String.t() | nil
   def find_offset_after_n_bytes(stream_id, target_bytes) do
     case reduce_stream(stream_id, 0, fn {{_, offset_int}, data, _}, bytes ->
-      new_bytes = bytes + byte_size(data)
-      if new_bytes >= target_bytes, do: {:halt, {:found, int_to_offset(offset_int)}}, else: {:cont, new_bytes}
-    end) do
+           new_bytes = bytes + byte_size(data)
+
+           if new_bytes >= target_bytes,
+             do: {:halt, {:found, int_to_offset(offset_int)}},
+             else: {:cont, new_bytes}
+         end) do
       {:found, offset} -> offset
       _ -> nil
     end
@@ -308,9 +312,30 @@ defmodule DurableStreams.Storage.ETS do
 
   @impl GenServer
   def init(_opts) do
-    :ets.new(@meta_table, [:set, :public, :named_table, read_concurrency: true, write_concurrency: true])
-    :ets.new(@data_table, [:ordered_set, :public, :named_table, read_concurrency: true, write_concurrency: true])
-    :ets.new(@last_seq_table, [:set, :public, :named_table, read_concurrency: true, write_concurrency: true])
+    :ets.new(@meta_table, [
+      :set,
+      :public,
+      :named_table,
+      read_concurrency: true,
+      write_concurrency: true
+    ])
+
+    :ets.new(@data_table, [
+      :ordered_set,
+      :public,
+      :named_table,
+      read_concurrency: true,
+      write_concurrency: true
+    ])
+
+    :ets.new(@last_seq_table, [
+      :set,
+      :public,
+      :named_table,
+      read_concurrency: true,
+      write_concurrency: true
+    ])
+
     {:ok, %{}}
   end
 

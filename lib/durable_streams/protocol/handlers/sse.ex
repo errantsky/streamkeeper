@@ -37,7 +37,8 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
       case StreamManager.get_metadata(stream_id) do
         {:ok, meta} ->
           # Get client cursor for jitter handling - can be in header OR query param
-          client_cursor = get_req_header(conn, "stream-cursor") |> List.first() || conn.params["cursor"]
+          client_cursor =
+            get_req_header(conn, "stream-cursor") |> List.first() || conn.params["cursor"]
 
           conn
           |> put_resp_header("content-type", "text/event-stream")
@@ -59,6 +60,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
   # This ensures clients get an immediate response, not waiting for new data
   defp send_initial_state(conn, stream_id, offset, meta, client_cursor) do
     started_at = System.monotonic_time(:millisecond)
+
     if Stream.json_mode?(meta) do
       send_initial_json_state(conn, stream_id, offset, client_cursor, started_at)
     else
@@ -71,7 +73,14 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
     case StreamManager.read(stream_id, offset, live: false) do
       {:ok, %{data: <<>>} = result} ->
         # Empty stream - send initial control event immediately, then wait for data
-        case send_control_event(conn, result.offset, true, result.closed, stream_id, client_cursor) do
+        case send_control_event(
+               conn,
+               result.offset,
+               true,
+               result.closed,
+               stream_id,
+               client_cursor
+             ) do
           {:ok, conn} when result.closed -> conn
           {:ok, conn} -> stream_binary_loop(conn, stream_id, result.offset, meta, nil, started_at)
           {:error, _} -> conn
@@ -84,12 +93,26 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
 
         case chunk(conn, event) do
           {:ok, conn} ->
-            case send_control_event(conn, result.offset, !result.has_more, result.closed, stream_id, client_cursor) do
-              {:ok, conn} when result.closed -> conn
-              {:ok, conn} -> stream_binary_loop(conn, stream_id, result.offset, meta, nil, started_at)
-              {:error, _} -> conn
+            case send_control_event(
+                   conn,
+                   result.offset,
+                   !result.has_more,
+                   result.closed,
+                   stream_id,
+                   client_cursor
+                 ) do
+              {:ok, conn} when result.closed ->
+                conn
+
+              {:ok, conn} ->
+                stream_binary_loop(conn, stream_id, result.offset, meta, nil, started_at)
+
+              {:error, _} ->
+                conn
             end
-          {:error, _} -> conn
+
+          {:error, _} ->
+            conn
         end
 
       {:error, _} ->
@@ -102,7 +125,14 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
     case StreamManager.read_messages(stream_id, offset, live: false) do
       {:ok, %{messages: []} = result} ->
         # Empty stream - send initial control event immediately, then wait for data
-        case send_control_event(conn, result.offset, true, result.closed, stream_id, client_cursor) do
+        case send_control_event(
+               conn,
+               result.offset,
+               true,
+               result.closed,
+               stream_id,
+               client_cursor
+             ) do
           {:ok, conn} when result.closed -> conn
           {:ok, conn} -> stream_json_loop(conn, stream_id, result.offset, nil, started_at)
           {:error, _} -> conn
@@ -112,19 +142,28 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
         # Has messages - send them, then continue looping
         last_offset =
           Enum.reduce_while(result.messages, offset, fn msg, _acc ->
-            json_data = case JSON.decode(msg.data) do
-              {:ok, parsed} -> JSON.encode!([parsed])
-              {:error, _} -> JSON.encode!([msg.data])
-            end
+            json_data =
+              case JSON.decode(msg.data) do
+                {:ok, parsed} -> JSON.encode!([parsed])
+                {:error, _} -> JSON.encode!([msg.data])
+              end
 
             event = build_data_event(json_data, msg.offset)
+
             case chunk(conn, event) do
               {:ok, _} -> {:cont, msg.offset}
               {:error, _} -> {:halt, msg.offset}
             end
           end)
 
-        case send_control_event(conn, last_offset, !result.has_more, result.closed, stream_id, client_cursor) do
+        case send_control_event(
+               conn,
+               last_offset,
+               !result.has_more,
+               result.closed,
+               stream_id,
+               client_cursor
+             ) do
           {:ok, conn} when result.closed -> conn
           {:ok, conn} -> stream_json_loop(conn, stream_id, last_offset, nil, started_at)
           {:error, _} -> conn
@@ -138,6 +177,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
   defp stream_binary_loop(conn, stream_id, offset, meta, client_cursor, started_at) do
     # Check if connection timeout has been reached
     elapsed = System.monotonic_time(:millisecond) - started_at
+
     if elapsed >= @connection_timeout_ms do
       # Close connection after ~60 seconds for CDN collapsing
       conn
@@ -151,8 +191,11 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
           # No new data, send control event with upToDate
           # Use the result offset (which is the current tail) not the requested offset
           case send_control_event(conn, result.offset, true, false, stream_id, client_cursor) do
-            {:ok, conn} -> stream_binary_loop(conn, stream_id, result.offset, meta, nil, started_at)
-            {:error, _} -> conn
+            {:ok, conn} ->
+              stream_binary_loop(conn, stream_id, result.offset, meta, nil, started_at)
+
+            {:error, _} ->
+              conn
           end
 
         {:ok, result} ->
@@ -163,12 +206,26 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
           case chunk(conn, event) do
             {:ok, conn} ->
               # Send control event after data
-              case send_control_event(conn, result.offset, !result.has_more, result.closed, stream_id, client_cursor) do
-                {:ok, conn} when result.closed -> conn
-                {:ok, conn} -> stream_binary_loop(conn, stream_id, result.offset, meta, nil, started_at)
-                {:error, _} -> conn
+              case send_control_event(
+                     conn,
+                     result.offset,
+                     !result.has_more,
+                     result.closed,
+                     stream_id,
+                     client_cursor
+                   ) do
+                {:ok, conn} when result.closed ->
+                  conn
+
+                {:ok, conn} ->
+                  stream_binary_loop(conn, stream_id, result.offset, meta, nil, started_at)
+
+                {:error, _} ->
+                  conn
               end
-            {:error, _} -> conn
+
+            {:error, _} ->
+              conn
           end
 
         {:error, _} ->
@@ -180,6 +237,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
   defp stream_json_loop(conn, stream_id, offset, client_cursor, started_at) do
     # Check if connection timeout has been reached
     elapsed = System.monotonic_time(:millisecond) - started_at
+
     if elapsed >= @connection_timeout_ms do
       # Close connection after ~60 seconds for CDN collapsing
       conn
@@ -202,12 +260,14 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
           last_offset =
             Enum.reduce_while(result.messages, offset, fn msg, _acc ->
               # Parse JSON and wrap in array
-              json_data = case JSON.decode(msg.data) do
-                {:ok, parsed} -> JSON.encode!([parsed])
-                {:error, _} -> JSON.encode!([msg.data])
-              end
+              json_data =
+                case JSON.decode(msg.data) do
+                  {:ok, parsed} -> JSON.encode!([parsed])
+                  {:error, _} -> JSON.encode!([msg.data])
+                end
 
               event = build_data_event(json_data, msg.offset)
+
               case chunk(conn, event) do
                 {:ok, _} -> {:cont, msg.offset}
                 {:error, _} -> {:halt, msg.offset}
@@ -215,7 +275,14 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
             end)
 
           # Send control event after all data
-          case send_control_event(conn, last_offset, !result.has_more, result.closed, stream_id, client_cursor) do
+          case send_control_event(
+                 conn,
+                 last_offset,
+                 !result.has_more,
+                 result.closed,
+                 stream_id,
+                 client_cursor
+               ) do
             {:ok, conn} when result.closed -> conn
             {:ok, conn} -> stream_json_loop(conn, stream_id, last_offset, nil, started_at)
             {:error, _} -> conn
@@ -237,11 +304,13 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
     cursor = generate_cursor_with_jitter(nil, client_cursor)
     # For SSE, never return "-1" as offset - use zero offset instead
     actual_offset = if Offset.start?(offset), do: Offset.zero(), else: offset
+
     control = %{
       "streamCursor" => cursor,
       "streamNextOffset" => actual_offset,
       "upToDate" => up_to_date
     }
+
     control = if closed, do: Map.put(control, "closed", true), else: control
 
     event = "event: control\ndata: #{JSON.encode!(control)}\n\n"

@@ -13,7 +13,8 @@ defmodule DurableStreams.MixProject do
       deps: deps(),
 
       # Hex.pm
-      description: "Streamkeeper - an Elixir/OTP implementation of the Durable Streams protocol for append-only, URL-addressable byte logs with long-polling and SSE support",
+      description:
+        "Streamkeeper - an Elixir/OTP implementation of the Durable Streams protocol for append-only, URL-addressable byte logs with long-polling and SSE support",
       package: package(),
 
       # Docs

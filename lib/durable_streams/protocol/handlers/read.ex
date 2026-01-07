@@ -57,7 +57,10 @@ defmodule DurableStreams.Protocol.Handlers.Read do
     conn
     |> put_resp_header("content-type", "application/json")
     |> put_resp_header("stream-earliest-offset", earliest_offset || Offset.zero())
-    |> send_resp(410, JSON.encode!(%{error: "Offset no longer available", earliest_offset: earliest_offset}))
+    |> send_resp(
+      410,
+      JSON.encode!(%{error: "Offset no longer available", earliest_offset: earliest_offset})
+    )
   end
 
   defp validate_offset(nil, _conn, live) do
@@ -74,9 +77,12 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   defp validate_offset(offset, conn, _live) do
     # Check for multiple offset parameters by counting in the raw query string
     query_string = conn.query_string || ""
-    offset_count = query_string
+
+    offset_count =
+      query_string
       |> String.split("&")
       |> Enum.count(fn part -> String.starts_with?(part, "offset=") end)
+
     multiple_offsets = offset_count > 1
 
     cond do
@@ -111,6 +117,7 @@ defmodule DurableStreams.Protocol.Handlers.Read do
         actual_offset = if Offset.start?(result.offset), do: Offset.zero(), else: result.offset
         # Per protocol: long-poll timeout with no data returns 204 No Content
         status = if live, do: 204, else: 200
+
         conn
         |> put_resp_header("stream-next-offset", actual_offset)
         |> put_resp_header("stream-up-to-date", "true")
@@ -152,6 +159,7 @@ defmodule DurableStreams.Protocol.Handlers.Read do
         # Per protocol: long-poll timeout with no data returns 204 No Content
         # For regular reads, return 200 with empty array
         {status, body} = if live, do: {204, ""}, else: {200, "[]"}
+
         conn
         |> put_resp_header("stream-next-offset", actual_offset)
         |> put_resp_header("stream-up-to-date", "true")
@@ -192,8 +200,11 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   defp maybe_put_closed_header(conn, true), do: put_resp_header(conn, "stream-closed", "true")
   defp maybe_put_closed_header(conn, _), do: conn
 
-  defp maybe_put_up_to_date_header(conn, true), do: conn  # has_more = true, not up to date
-  defp maybe_put_up_to_date_header(conn, false), do: put_resp_header(conn, "stream-up-to-date", "true")
+  # has_more = true, not up to date
+  defp maybe_put_up_to_date_header(conn, true), do: conn
+
+  defp maybe_put_up_to_date_header(conn, false),
+    do: put_resp_header(conn, "stream-up-to-date", "true")
 
   defp maybe_put_cursor_header(conn, true, stream_id) do
     # Check if client sent a cursor (for jitter handling) - can be in header OR query param
@@ -201,11 +212,13 @@ defmodule DurableStreams.Protocol.Handlers.Read do
     cursor = generate_cursor_with_jitter(stream_id, client_cursor)
     put_resp_header(conn, "stream-cursor", cursor)
   end
+
   defp maybe_put_cursor_header(conn, _, _), do: conn
 
   defp put_cache_headers(conn, true), do: put_resp_header(conn, "cache-control", "no-cache")
   # Per protocol: catch-up reads should include stale-while-revalidate for better CDN behavior
-  defp put_cache_headers(conn, false), do: put_resp_header(conn, "cache-control", "public, max-age=60, stale-while-revalidate=300")
+  defp put_cache_headers(conn, false),
+    do: put_resp_header(conn, "cache-control", "public, max-age=60, stale-while-revalidate=300")
 
   defp generate_etag(stream_id, offset) do
     hash = :crypto.hash(:sha256, "#{stream_id}:#{offset}") |> Base.encode16(case: :lower)

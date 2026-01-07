@@ -25,9 +25,10 @@ defmodule DurableStreams.LongPollingTest do
       {:ok, offset} = DurableStreams.append(id, "initial")
 
       # Start a long-poll reader
-      reader = Task.async(fn ->
-        DurableStreams.read(id, offset, live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          DurableStreams.read(id, offset, live: true, timeout: 5000)
+        end)
 
       # Wait a bit, then append new data
       :timer.sleep(100)
@@ -80,9 +81,10 @@ defmodule DurableStreams.LongPollingTest do
       {:ok, offset} = DurableStreams.append(id, "initial")
 
       # Start a long-poll reader
-      reader = Task.async(fn ->
-        DurableStreams.read(id, offset, live: true, timeout: 10_000)
-      end)
+      reader =
+        Task.async(fn ->
+          DurableStreams.read(id, offset, live: true, timeout: 10_000)
+        end)
 
       # Close the stream
       :timer.sleep(50)
@@ -95,9 +97,10 @@ defmodule DurableStreams.LongPollingTest do
 
     test "waiter receives data appended during wait", %{id: id} do
       # Start waiting before any data exists
-      reader = Task.async(fn ->
-        DurableStreams.read(id, "-1", live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          DurableStreams.read(id, "-1", live: true, timeout: 5000)
+        end)
 
       # Small delay then append
       :timer.sleep(100)
@@ -116,9 +119,10 @@ defmodule DurableStreams.LongPollingTest do
       assert result1.data == "first"
 
       # Second long-poll with returned offset, start waiting
-      reader = Task.async(fn ->
-        DurableStreams.read(id, result1.offset, live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          DurableStreams.read(id, result1.offset, live: true, timeout: 5000)
+        end)
 
       # Append new data
       :timer.sleep(50)
@@ -137,9 +141,10 @@ defmodule DurableStreams.LongPollingTest do
 
       {:ok, offset} = DurableStreams.StreamManager.append(id, ~s({"msg": "initial"}))
 
-      reader = Task.async(fn ->
-        DurableStreams.StreamManager.read_messages(id, offset, live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          DurableStreams.StreamManager.read_messages(id, offset, live: true, timeout: 5000)
+        end)
 
       :timer.sleep(100)
       {:ok, _} = DurableStreams.StreamManager.append(id, ~s({"msg": "new"}))
@@ -156,10 +161,11 @@ defmodule DurableStreams.LongPollingTest do
     test "long-poll on deleted stream returns not_found", %{id: id} do
       {:ok, offset} = DurableStreams.append(id, "data")
 
-      reader = Task.async(fn ->
-        :timer.sleep(50)
-        DurableStreams.read(id, offset, live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          :timer.sleep(50)
+          DurableStreams.read(id, offset, live: true, timeout: 5000)
+        end)
 
       DurableStreams.delete(id)
 
@@ -168,12 +174,14 @@ defmodule DurableStreams.LongPollingTest do
     end
 
     test "handles rapid append during long-poll wait", %{id: id} do
-      reader = Task.async(fn ->
-        DurableStreams.read(id, "-1", live: true, timeout: 5000)
-      end)
+      reader =
+        Task.async(fn ->
+          DurableStreams.read(id, "-1", live: true, timeout: 5000)
+        end)
 
       # Rapid appends
       :timer.sleep(50)
+
       for i <- 1..10 do
         DurableStreams.append(id, "msg#{i}")
       end

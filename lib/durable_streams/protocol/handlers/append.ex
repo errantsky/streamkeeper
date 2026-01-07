@@ -153,10 +153,12 @@ defmodule DurableStreams.Protocol.Handlers.Append do
     case read_body(conn, length: 100_000_000, read_length: 1_000_000) do
       {:ok, body, conn} ->
         {:ok, body, conn}
+
       {:more, _partial, conn} ->
         # Body too large - read and discard remaining then return error
         drain_body(conn)
         {:error, :too_large, conn}
+
       {:error, _reason} ->
         {:error, :too_large, conn}
     end

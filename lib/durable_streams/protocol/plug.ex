@@ -29,10 +29,10 @@ defmodule DurableStreams.Protocol.Plug do
 
   alias DurableStreams.Protocol.Handlers
 
-  plug Plug.Logger
-  plug :match
-  plug :fetch_query_params
-  plug :dispatch
+  plug(Plug.Logger)
+  plug(:match)
+  plug(:fetch_query_params)
+  plug(:dispatch)
 
   put "/:stream_id" do
     Handlers.Create.call(conn)
