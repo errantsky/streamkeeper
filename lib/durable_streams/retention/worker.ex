@@ -50,10 +50,6 @@ defmodule DurableStreams.Retention.Worker do
       {:error, :not_found} ->
         Logger.warning("[Retention] Stream not found for compaction: #{stream_id}")
         {:error, :not_found}
-
-      {:error, reason} ->
-        Logger.error("[Retention] Failed to compact #{stream_id}: #{inspect(reason)}")
-        {:error, reason}
     end
   end
 

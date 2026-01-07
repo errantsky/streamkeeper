@@ -23,7 +23,10 @@ defmodule DurableStreams.MixProject do
       docs: docs(),
 
       # Testing
-      elixirc_paths: elixirc_paths(Mix.env())
+      elixirc_paths: elixirc_paths(Mix.env()),
+
+      # Dialyzer
+      dialyzer: dialyzer()
     ]
   end
 
@@ -57,7 +60,10 @@ defmodule DurableStreams.MixProject do
       # Benchmarking
       {:benchee, "~> 1.3", only: :dev},
       {:benchee_html, "~> 1.0", only: :dev},
-      {:benchee_markdown, "~> 0.3", only: :dev}
+      {:benchee_markdown, "~> 0.3", only: :dev},
+
+      # Static analysis
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -114,4 +120,10 @@ defmodule DurableStreams.MixProject do
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp dialyzer do
+    [
+      plt_add_apps: [:mix]
+    ]
+  end
 end

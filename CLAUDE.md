@@ -21,6 +21,9 @@ mix durable_streams.conformance
 mix bench              # Run all benchmarks
 mix bench storage      # Run specific benchmark
 
+# Static analysis
+mix dialyzer           # Run type checker (first run builds PLT)
+
 # Build hex package
 mix hex.build
 
@@ -114,6 +117,7 @@ mix hex.outdated
 - `benchee` ~> 1.3 (benchmarking)
 - `benchee_html` ~> 1.0 (HTML benchmark reports)
 - `benchee_markdown` ~> 0.3 (Markdown benchmark reports)
+- `dialyxir` ~> 1.4 (static type analysis)
 
 When updating dependencies:
 1. Update version in `mix.exs`
