@@ -24,6 +24,7 @@ defmodule Mix.Tasks.DurableStreams.Conformance do
 
   # Inline router for conformance tests - mounts Protocol.Plug at /v1/stream
   defmodule ConformanceRouter do
+    @moduledoc false
     use Plug.Router
 
     plug Plug.Logger

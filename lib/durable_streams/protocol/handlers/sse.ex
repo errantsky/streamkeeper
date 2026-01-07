@@ -19,7 +19,7 @@ defmodule DurableStreams.Protocol.Handlers.SSE do
   """
 
   import Plug.Conn
-  alias DurableStreams.{JSON, StreamManager, Stream, Offset}
+  alias DurableStreams.{JSON, Offset, Stream, StreamManager}
 
   # Per protocol: close SSE connections after ~60 seconds for CDN collapsing
   @connection_timeout_ms 60_000

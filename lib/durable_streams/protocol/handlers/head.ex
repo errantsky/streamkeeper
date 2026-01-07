@@ -6,7 +6,7 @@ defmodule DurableStreams.Protocol.Handlers.Head do
   """
 
   import Plug.Conn
-  alias DurableStreams.{StreamManager, Storage}
+  alias DurableStreams.{Storage, StreamManager}
 
   def call(conn) do
     stream_id = conn.path_params["stream_id"]

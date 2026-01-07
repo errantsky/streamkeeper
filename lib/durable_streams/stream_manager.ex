@@ -7,6 +7,7 @@ defmodule DurableStreams.StreamManager do
   """
 
   alias DurableStreams.Server.StreamServer
+  alias DurableStreams.Storage
 
   @doc """
   Creates a new stream with the given ID and options.
@@ -88,7 +89,7 @@ defmodule DurableStreams.StreamManager do
     case Registry.lookup(DurableStreams.Registry, stream_id) do
       [{pid, _}] ->
         DynamicSupervisor.terminate_child(DurableStreams.StreamSupervisor, pid)
-        DurableStreams.Storage.ETS.delete(stream_id)
+        Storage.ETS.delete(stream_id)
 
       [] ->
         {:error, :not_found}

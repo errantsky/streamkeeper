@@ -279,11 +279,11 @@ if Code.ensure_loaded?(Phoenix.LiveView) do
   def handle_message(socket, {:DOWN, ref, :process, pid, reason}) do
     # Only handle if it's our listener
     if socket.assigns[:ds_listener_ref] == ref and socket.assigns[:ds_listener_pid] == pid do
-      if reason not in [:normal, :killed] do
+      if reason in [:normal, :killed] do
+        {:complete, stop(socket)}
+      else
         Logger.warning("[DurableStreams.LiveView] Listener crashed: #{inspect(reason)}")
         {:error, {:listener_crashed, reason}, stop(socket)}
-      else
-        {:complete, stop(socket)}
       end
     else
       # Not our message, return unchanged

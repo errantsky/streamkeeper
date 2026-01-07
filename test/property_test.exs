@@ -78,7 +78,8 @@ defmodule DurableStreams.PropertyTest do
     end
 
     property "reading from offset returns only subsequent data" do
-      check all [first | rest] = data_list <- list_of(binary(min_length: 1, max_length: 100), min_length: 2, max_length: 10) do
+      check all [first | rest] = data_list <-
+                  list_of(binary(min_length: 1, max_length: 100), min_length: 2, max_length: 10) do
         id = "prop-offset-read-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "application/octet-stream")
 
@@ -224,7 +225,7 @@ defmodule DurableStreams.PropertyTest do
 
   describe "TTL configuration" do
     property "TTL creates valid expires_at" do
-      check all ttl <- positive_integer() |> filter(&(&1 <= 86400)) do
+      check all ttl <- positive_integer() |> filter(&(&1 <= 86_400)) do
         id = "prop-ttl-#{System.unique_integer([:positive])}"
         before = DateTime.utc_now()
 
@@ -249,7 +250,7 @@ defmodule DurableStreams.PropertyTest do
 
   describe "data integrity" do
     property "binary data is preserved exactly" do
-      check all data <- binary(min_length: 0, max_length: 10000) do
+      check all data <- binary(min_length: 0, max_length: 10_000) do
         id = "prop-binary-#{System.unique_integer([:positive])}"
         {:ok, _} = DurableStreams.create(id, content_type: "application/octet-stream")
 

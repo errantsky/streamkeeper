@@ -11,7 +11,7 @@ defmodule DurableStreams.Protocol.Handlers.Read do
   """
 
   import Plug.Conn
-  alias DurableStreams.{JSON, StreamManager, Offset, Stream}
+  alias DurableStreams.{JSON, Offset, Stream, StreamManager}
 
   def call(conn) do
     stream_id = conn.path_params["stream_id"]

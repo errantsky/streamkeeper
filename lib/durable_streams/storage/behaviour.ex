@@ -8,7 +8,7 @@ defmodule DurableStreams.Storage.Behaviour do
   - Custom implementations
   """
 
-  alias DurableStreams.{Stream, Offset}
+  alias DurableStreams.{Offset, Stream}
 
   @type stream_id :: String.t()
   @type offset :: Offset.t()

@@ -16,7 +16,7 @@ defmodule DurableStreams.Storage.ETS do
 
   use GenServer
 
-  alias DurableStreams.{Stream, Offset}
+  alias DurableStreams.{Offset, Stream}
 
   @meta_table :durable_streams_meta
   @data_table :durable_streams_data

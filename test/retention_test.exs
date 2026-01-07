@@ -1,9 +1,9 @@
 defmodule DurableStreams.RetentionTest do
   use ExUnit.Case, async: true
 
-  alias DurableStreams.{Stream, Offset}
-  alias DurableStreams.Storage.ETS, as: Storage
+  alias DurableStreams.{Offset, Stream}
   alias DurableStreams.Retention.Worker
+  alias DurableStreams.Storage.ETS, as: Storage
 
   describe "Stream retention policy" do
     test "new stream with retention policy" do

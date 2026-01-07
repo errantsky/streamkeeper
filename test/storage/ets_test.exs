@@ -1,8 +1,8 @@
 defmodule DurableStreams.Storage.ETSTest do
   use ExUnit.Case
 
+  alias DurableStreams.{Offset, Stream}
   alias DurableStreams.Storage.ETS, as: Storage
-  alias DurableStreams.{Stream, Offset}
 
   setup do
     id = "storage-test-#{System.unique_integer([:positive])}"
