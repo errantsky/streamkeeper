@@ -2,26 +2,47 @@ defmodule DurableStreams.OffsetTest do
   use ExUnit.Case, async: true
   alias DurableStreams.Offset
 
-  describe "generate/1" do
+  describe "generate/0" do
     test "generates unique offsets" do
       offsets = for _ <- 1..1000, do: Offset.generate()
       assert length(Enum.uniq(offsets)) == 1000
     end
 
     test "offsets are lexicographically sortable" do
-      offsets =
-        for i <- 1..100 do
-          Process.sleep(1)
-          Offset.generate(i)
-        end
-
+      offsets = for _ <- 1..100, do: Offset.generate()
       assert offsets == Enum.sort(offsets)
     end
 
     test "generates offsets with correct format" do
-      offset = Offset.generate(5)
-      # Format: 16 hex chars - 4 hex chars - 4 hex chars
-      assert Regex.match?(~r/^[0-9a-f]{16}-[0-9a-f]{4}-[0-9a-f]{4}$/, offset)
+      offset = Offset.generate()
+      # Format: 16 hex chars
+      assert Regex.match?(~r/^[0-9a-f]{16}$/, offset)
+    end
+  end
+
+  describe "to_integer/1" do
+    test "converts valid offset to integer" do
+      offset = Offset.generate()
+      int = Offset.to_integer(offset)
+      assert is_integer(int)
+      assert int > 0
+    end
+
+    test "returns nil for start offset" do
+      assert Offset.to_integer("-1") == nil
+    end
+
+    test "returns nil for invalid offset" do
+      assert Offset.to_integer("invalid") == nil
+      assert Offset.to_integer(nil) == nil
+    end
+
+    test "round-trips correctly" do
+      offset = Offset.generate()
+      int = Offset.to_integer(offset)
+      # Convert back to string and compare
+      reconstructed = :io_lib.format("~16.16.0b", [int]) |> IO.iodata_to_binary()
+      assert offset == reconstructed
     end
   end
 
@@ -61,7 +82,6 @@ defmodule DurableStreams.OffsetTest do
 
     test "earlier offsets compare less than later offsets" do
       offset1 = Offset.generate()
-      Process.sleep(2)
       offset2 = Offset.generate()
       assert Offset.compare(offset1, offset2) == :lt
     end
@@ -78,10 +98,19 @@ defmodule DurableStreams.OffsetTest do
 
     test "later offset is after earlier offset" do
       offset1 = Offset.generate()
-      Process.sleep(2)
       offset2 = Offset.generate()
       assert Offset.after?(offset2, offset1) == true
       assert Offset.after?(offset1, offset2) == false
+    end
+  end
+
+  describe "zero/0" do
+    test "returns zero offset" do
+      assert Offset.zero() == "0000000000000000"
+    end
+
+    test "zero is greater than start" do
+      assert Offset.compare(Offset.zero(), Offset.start()) == :gt
     end
   end
 end

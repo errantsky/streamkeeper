@@ -2,21 +2,20 @@ defmodule DurableStreams.Offset do
   @moduledoc """
   Generates and compares opaque, lexicographically sortable offsets.
 
-  Format: {timestamp_us}-{sequence}-{random}
-  Example: "0001929a3b4c5d6e-0001-a1b2"
+  Format: 16 hex digits from erlang:unique_integer([:monotonic, :positive])
+  Example: "0000000000a1b2c3"
 
   Offsets are designed to be:
   - Opaque: Clients should never parse them
   - Lexicographically sortable: String comparison equals temporal order
-  - Unique: Combines timestamp, sequence, and randomness
+  - Unique: Guaranteed by erlang:unique_integer
+  - Clock-independent: Uses Erlang's monotonic integer, not wall clock
   """
-
-  import Bitwise
 
   @type t :: String.t()
 
   @start "-1"
-  @zero "0000000000000000-0000-0000"
+  @zero "0000000000000000"
 
   @doc """
   Returns the start offset, which represents the beginning of a stream.
@@ -40,17 +39,32 @@ defmodule DurableStreams.Offset do
   @doc """
   Generates a new unique, lexicographically sortable offset.
 
-  The offset format is: `{timestamp_us}-{sequence}-{random}`
-  where each component is zero-padded hex.
+  Uses erlang:unique_integer([:monotonic, :positive]) for clock-independent
+  monotonic ordering. The integer is formatted as a 16-character zero-padded
+  hexadecimal string for lexicographic sortability.
   """
-  @spec generate(non_neg_integer()) :: t()
-  def generate(sequence \\ 0) do
-    timestamp = System.system_time(:microsecond)
-    random = :rand.uniform(0xFFFF)
-
-    :io_lib.format("~16.16.0b-~4.16.0b-~4.16.0b", [timestamp, sequence &&& 0xFFFF, random])
-    |> IO.iodata_to_binary()
+  @spec generate() :: t()
+  def generate do
+    int = :erlang.unique_integer([:monotonic, :positive])
+    :io_lib.format("~16.16.0b", [int]) |> IO.iodata_to_binary()
   end
+
+  @doc """
+  Converts an offset string to its integer representation for use as ETS key.
+
+  Returns nil for the start offset (-1) or invalid offsets.
+  """
+  @spec to_integer(t()) :: non_neg_integer() | nil
+  def to_integer(@start), do: nil
+
+  def to_integer(offset) when is_binary(offset) do
+    case Integer.parse(offset, 16) do
+      {int, ""} -> int
+      _ -> nil
+    end
+  end
+
+  def to_integer(_), do: nil
 
   @doc """
   Compares two offsets and returns :lt, :eq, or :gt.
@@ -70,27 +84,4 @@ defmodule DurableStreams.Offset do
   """
   @spec after?(t(), t()) :: boolean()
   def after?(offset, reference), do: compare(offset, reference) == :gt
-
-  @doc """
-  Extracts the timestamp (in milliseconds) from an offset.
-
-  Returns nil for the start offset (-1) or invalid offsets.
-  """
-  @spec timestamp(t()) :: non_neg_integer() | nil
-  def timestamp(@start), do: nil
-
-  def timestamp(offset) when is_binary(offset) do
-    case String.split(offset, "-") do
-      [timestamp_hex, _, _] ->
-        case Integer.parse(timestamp_hex, 16) do
-          {timestamp_us, ""} -> div(timestamp_us, 1000)
-          _ -> nil
-        end
-
-      _ ->
-        nil
-    end
-  end
-
-  def timestamp(_), do: nil
 end
