@@ -40,6 +40,7 @@ defmodule DurableStreams.Stream do
           ttl: non_neg_integer() | nil,
           expires_at: DateTime.t() | nil,
           earliest_offset: String.t() | nil,
+          current_offset: String.t() | nil,
           message_count: non_neg_integer(),
           total_bytes: non_neg_integer(),
           retention_policy: retention_policy() | nil
@@ -53,6 +54,7 @@ defmodule DurableStreams.Stream do
     :ttl,
     :expires_at,
     :earliest_offset,
+    :current_offset,
     :retention_policy,
     closed: false,
     message_count: 0,
@@ -84,6 +86,7 @@ defmodule DurableStreams.Stream do
       expires_at: expires_at,
       retention_policy: retention,
       earliest_offset: nil,
+      current_offset: nil,
       message_count: 0,
       total_bytes: 0,
       closed: false

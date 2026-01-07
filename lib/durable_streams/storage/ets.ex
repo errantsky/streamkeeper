@@ -2,11 +2,14 @@ defmodule DurableStreams.Storage.ETS do
   @moduledoc """
   ETS-based storage backend for single-node deployments.
 
-  Uses four ETS tables:
+  Uses three ETS tables:
   - :durable_streams_meta - Stream metadata
-  - :durable_streams_data - Ordered chunks {{stream_id, sequence}, offset, data}
-  - :durable_streams_seq  - Sequence counters for offset generation
+  - :durable_streams_data - Ordered chunks {{stream_id, offset_int}, data, timestamp_ms}
   - :durable_streams_last_seq - Last seq value per stream for ordering enforcement
+
+  The data table key is {stream_id, offset_integer} where offset_integer is derived
+  from erlang:unique_integer([:monotonic, :positive]). This enables efficient seeking
+  using ets:next/2 since keys are naturally ordered.
   """
 
   @behaviour DurableStreams.Storage.Behaviour
@@ -17,7 +20,6 @@ defmodule DurableStreams.Storage.ETS do
 
   @meta_table :durable_streams_meta
   @data_table :durable_streams_data
-  @seq_table :durable_streams_seq
   @last_seq_table :durable_streams_last_seq
 
   # Retention-related functions
@@ -30,22 +32,23 @@ defmodule DurableStreams.Storage.ETS do
 
   @doc """
   Returns the timestamp of the first (earliest) message in the stream.
+  Uses earliest_offset from metadata for O(1) lookup.
   """
   @spec get_first_message_timestamp(String.t()) :: {:ok, non_neg_integer()} | {:error, term()}
   def get_first_message_timestamp(stream_id) do
-    chunks =
-      :ets.match_object(@data_table, {{stream_id, :_}, :_, :_})
-      |> Enum.sort_by(fn {{_, seq}, _, _} -> seq end)
-
-    case chunks do
-      [] ->
+    case :ets.lookup(@meta_table, stream_id) do
+      [{^stream_id, %{earliest_offset: nil}}] ->
         {:error, :no_messages}
 
-      [{_, offset, _} | _] ->
-        case Offset.timestamp(offset) do
-          nil -> {:error, :invalid_offset}
-          ts -> {:ok, ts}
+      [{^stream_id, %{earliest_offset: offset}}] ->
+        key = {stream_id, Offset.to_integer(offset)}
+        case :ets.lookup(@data_table, key) do
+          [{_key, _data, timestamp}] -> {:ok, timestamp}
+          [] -> {:error, :no_messages}
         end
+
+      [] ->
+        {:error, :not_found}
     end
   end
 
@@ -55,14 +58,8 @@ defmodule DurableStreams.Storage.ETS do
   """
   @spec find_offset_after_timestamp(String.t(), non_neg_integer()) :: String.t() | nil
   def find_offset_after_timestamp(stream_id, cutoff_ms) do
-    :ets.match_object(@data_table, {{stream_id, :_}, :_, :_})
-    |> Enum.sort_by(fn {{_, seq}, _, _} -> seq end)
-    |> Enum.find_value(fn {{_, _}, offset, _} ->
-      case Offset.timestamp(offset) do
-        nil -> nil
-        ts when ts >= cutoff_ms -> offset
-        _ -> nil
-      end
+    reduce_stream(stream_id, nil, fn {{_, offset_int}, _, ts}, _acc ->
+      if ts >= cutoff_ms, do: {:halt, int_to_offset(offset_int)}, else: {:cont, nil}
     end)
   end
 
@@ -72,15 +69,11 @@ defmodule DurableStreams.Storage.ETS do
   """
   @spec find_offset_after_n_messages(String.t(), non_neg_integer()) :: String.t() | nil
   def find_offset_after_n_messages(stream_id, n) do
-    chunks =
-      :ets.match_object(@data_table, {{stream_id, :_}, :_, :_})
-      |> Enum.sort_by(fn {{_, seq}, _, _} -> seq end)
-
-    if length(chunks) > n do
-      {{_, _}, offset, _} = Enum.at(chunks, n)
-      offset
-    else
-      nil
+    case reduce_stream(stream_id, 0, fn {{_, offset_int}, _, _}, idx ->
+      if idx == n, do: {:halt, {:found, int_to_offset(offset_int)}}, else: {:cont, idx + 1}
+    end) do
+      {:found, offset} -> offset
+      _ -> nil
     end
   end
 
@@ -90,22 +83,13 @@ defmodule DurableStreams.Storage.ETS do
   """
   @spec find_offset_after_n_bytes(String.t(), non_neg_integer()) :: String.t() | nil
   def find_offset_after_n_bytes(stream_id, target_bytes) do
-    chunks =
-      :ets.match_object(@data_table, {{stream_id, :_}, :_, :_})
-      |> Enum.sort_by(fn {{_, seq}, _, _} -> seq end)
-
-    {_, result_offset} =
-      Enum.reduce_while(chunks, {0, nil}, fn {{_, _}, offset, data}, {bytes_so_far, _} ->
-        new_bytes = bytes_so_far + byte_size(data)
-
-        if new_bytes >= target_bytes do
-          {:halt, {new_bytes, offset}}
-        else
-          {:cont, {new_bytes, nil}}
-        end
-      end)
-
-    result_offset
+    case reduce_stream(stream_id, 0, fn {{_, offset_int}, data, _}, bytes ->
+      new_bytes = bytes + byte_size(data)
+      if new_bytes >= target_bytes, do: {:halt, {:found, int_to_offset(offset_int)}}, else: {:cont, new_bytes}
+    end) do
+      {:found, offset} -> offset
+      _ -> nil
+    end
   end
 
   @doc """
@@ -115,23 +99,12 @@ defmodule DurableStreams.Storage.ETS do
   @spec delete_messages_before(String.t(), String.t()) ::
           {:ok, non_neg_integer(), non_neg_integer()} | {:error, term()}
   def delete_messages_before(stream_id, new_earliest_offset) do
-    chunks =
-      :ets.match_object(@data_table, {{stream_id, :_}, :_, :_})
-      |> Enum.filter(fn {{_, _}, offset, _} ->
-        Offset.compare(offset, new_earliest_offset) == :lt
+    new_earliest_int = Offset.to_integer(new_earliest_offset)
+
+    {deleted_count, deleted_bytes} =
+      delete_stream_while(stream_id, fn {{_, offset_int}, _, _} ->
+        offset_int < new_earliest_int
       end)
-
-    deleted_count = length(chunks)
-
-    deleted_bytes =
-      Enum.reduce(chunks, 0, fn {{_, _}, _, data}, acc ->
-        acc + byte_size(data)
-      end)
-
-    # Delete each chunk
-    Enum.each(chunks, fn {key, _, _} ->
-      :ets.delete(@data_table, key)
-    end)
 
     {:ok, deleted_count, deleted_bytes}
   end
@@ -183,7 +156,6 @@ defmodule DurableStreams.Storage.ETS do
   def create(stream_id, %Stream{} = stream) do
     case :ets.insert_new(@meta_table, {stream_id, stream}) do
       true ->
-        :ets.insert(@seq_table, {stream_id, 0})
         :ets.insert(@last_seq_table, {stream_id, nil})
         :ok
 
@@ -210,19 +182,23 @@ defmodule DurableStreams.Storage.ETS do
         # Check seq ordering if provided
         case check_seq_ordering(stream_id, seq) do
           :ok ->
-            sequence = :ets.update_counter(@seq_table, stream_id, 1)
-            offset = Offset.generate(sequence)
-            # Key is {stream_id, sequence} to ensure uniqueness in ordered_set
-            :ets.insert(@data_table, {{stream_id, sequence}, offset, data})
+            offset = Offset.generate()
+            offset_int = Offset.to_integer(offset)
+            timestamp = System.system_time(:millisecond)
+
+            # Key is {stream_id, offset_int} for efficient seeking
+            :ets.insert(@data_table, {{stream_id, offset_int}, data, timestamp})
 
             # Update last seq if provided
             if seq, do: :ets.insert(@last_seq_table, {stream_id, seq})
 
-            # Update message_count and total_bytes for retention tracking
+            # Update message_count, total_bytes, current_offset, and earliest_offset (on first append)
             updated_stream = %{
               stream
               | message_count: stream.message_count + 1,
-                total_bytes: stream.total_bytes + byte_size(data)
+                total_bytes: stream.total_bytes + byte_size(data),
+                current_offset: offset,
+                earliest_offset: stream.earliest_offset || offset
             }
 
             :ets.insert(@meta_table, {stream_id, updated_stream})
@@ -268,24 +244,7 @@ defmodule DurableStreams.Storage.ETS do
 
   @impl DurableStreams.Storage.Behaviour
   def read(stream_id, from_offset) do
-    case :ets.lookup(@meta_table, stream_id) do
-      [{^stream_id, stream}] ->
-        chunks = get_chunks_after(stream_id, from_offset)
-
-        case chunks do
-          [] ->
-            current = get_current_offset_internal(stream_id)
-            {:ok, %{data: <<>>, offset: current, has_more: false, closed: stream.closed}}
-
-          _ ->
-            data = chunks |> Enum.map(fn {{_, _}, _, d} -> d end) |> IO.iodata_to_binary()
-            {{_, _}, last_offset, _} = List.last(chunks)
-            {:ok, %{data: data, offset: last_offset, has_more: false, closed: stream.closed}}
-        end
-
-      [] ->
-        {:error, :not_found}
-    end
+    read_internal(stream_id, from_offset, :binary)
   end
 
   @impl DurableStreams.Storage.Behaviour
@@ -312,8 +271,8 @@ defmodule DurableStreams.Storage.ETS do
     case :ets.lookup(@meta_table, stream_id) do
       [{^stream_id, _}] ->
         :ets.delete(@meta_table, stream_id)
-        :ets.match_delete(@data_table, {{stream_id, :_}, :_, :_})
-        :ets.delete(@seq_table, stream_id)
+        # Delete all data entries for this stream using iteration
+        delete_all_stream_data(stream_id)
         :ets.delete(@last_seq_table, stream_id)
         :ok
 
@@ -325,7 +284,8 @@ defmodule DurableStreams.Storage.ETS do
   @impl DurableStreams.Storage.Behaviour
   def current_offset(stream_id) do
     case :ets.lookup(@meta_table, stream_id) do
-      [{^stream_id, _}] -> {:ok, get_current_offset_internal(stream_id)}
+      [{^stream_id, %{current_offset: nil}}] -> {:ok, Offset.start()}
+      [{^stream_id, %{current_offset: offset}}] -> {:ok, offset}
       [] -> {:error, :not_found}
     end
   end
@@ -337,28 +297,7 @@ defmodule DurableStreams.Storage.ETS do
 
   @impl DurableStreams.Storage.Behaviour
   def read_messages(stream_id, from_offset) do
-    case :ets.lookup(@meta_table, stream_id) do
-      [{^stream_id, stream}] ->
-        chunks = get_chunks_after(stream_id, from_offset)
-
-        case chunks do
-          [] ->
-            current = get_current_offset_internal(stream_id)
-            {:ok, %{messages: [], offset: current, has_more: false, closed: stream.closed}}
-
-          _ ->
-            messages =
-              Enum.map(chunks, fn {{_, _}, offset, data} ->
-                %{data: data, offset: offset}
-              end)
-
-            {{_, _}, last_offset, _} = List.last(chunks)
-            {:ok, %{messages: messages, offset: last_offset, has_more: false, closed: stream.closed}}
-        end
-
-      [] ->
-        {:error, :not_found}
-    end
+    read_internal(stream_id, from_offset, :messages)
   end
 
   # GenServer callbacks
@@ -367,28 +306,140 @@ defmodule DurableStreams.Storage.ETS do
   def init(_opts) do
     :ets.new(@meta_table, [:set, :public, :named_table, read_concurrency: true])
     :ets.new(@data_table, [:ordered_set, :public, :named_table, read_concurrency: true])
-    :ets.new(@seq_table, [:set, :public, :named_table])
-    :ets.new(@last_seq_table, [:set, :public, :named_table])
+    :ets.new(@last_seq_table, [:set, :public, :named_table, read_concurrency: true])
     {:ok, %{}}
   end
 
   # Private helpers
 
-  defp get_chunks_after(stream_id, from_offset) do
-    # Match all entries for this stream_id with key pattern {{stream_id, seq}, offset, data}
-    :ets.match_object(@data_table, {{stream_id, :_}, :_, :_})
-    |> Enum.filter(fn {{_, _}, chunk_offset, _} ->
-      Offset.after?(chunk_offset, from_offset)
-    end)
-    |> Enum.sort_by(fn {{_, seq}, _, _} -> seq end)
+  # Shared implementation for read/2 and read_messages/2
+  # format: :binary returns concatenated data, :messages returns list of message maps
+  defp read_internal(stream_id, from_offset, format) do
+    case :ets.lookup(@meta_table, stream_id) do
+      [{^stream_id, stream}] ->
+        chunks = get_chunks_after(stream_id, from_offset)
+        current_off = stream.current_offset || Offset.start()
+
+        case chunks do
+          [] ->
+            empty_result(current_off, stream.closed, format)
+
+          _ ->
+            {last_key, _, _} = List.last(chunks)
+            {_, last_offset_int} = last_key
+            last_offset = int_to_offset(last_offset_int)
+            chunks_result(chunks, last_offset, stream.closed, format)
+        end
+
+      [] ->
+        {:error, :not_found}
+    end
   end
 
-  defp get_current_offset_internal(stream_id) do
-    case :ets.match(@data_table, {{stream_id, :_}, :"$1", :_})
-         |> List.flatten()
-         |> Enum.max(fn -> nil end) do
-      nil -> Offset.start()
-      offset -> offset
+  defp empty_result(offset, closed, :binary) do
+    {:ok, %{data: <<>>, offset: offset, has_more: false, closed: closed}}
+  end
+
+  defp empty_result(offset, closed, :messages) do
+    {:ok, %{messages: [], offset: offset, has_more: false, closed: closed}}
+  end
+
+  defp chunks_result(chunks, last_offset, closed, :binary) do
+    data = chunks |> Enum.map(fn {_key, d, _ts} -> d end) |> IO.iodata_to_binary()
+    {:ok, %{data: data, offset: last_offset, has_more: false, closed: closed}}
+  end
+
+  defp chunks_result(chunks, last_offset, closed, :messages) do
+    messages =
+      Enum.map(chunks, fn {{_sid, offset_int}, data, _ts} ->
+        %{data: data, offset: int_to_offset(offset_int)}
+      end)
+
+    {:ok, %{messages: messages, offset: last_offset, has_more: false, closed: closed}}
+  end
+
+  # Convert offset integer back to string format
+  defp int_to_offset(offset_int) do
+    :io_lib.format("~16.16.0b", [offset_int]) |> IO.iodata_to_binary()
+  end
+
+  # Returns chunks after the given offset using reduce_stream_from
+  defp get_chunks_after(stream_id, from_offset) do
+    from_int = Offset.to_integer(from_offset) || -1
+
+    reduce_stream_from(stream_id, from_int, [], fn chunk, acc ->
+      {:cont, [chunk | acc]}
+    end)
+    |> Enum.reverse()
+  end
+
+  # Delete all data entries for a stream
+  defp delete_all_stream_data(stream_id) do
+    delete_stream_while(stream_id, fn _ -> true end)
+  end
+
+  # Unified stream iteration primitives
+  # Works like Enum.reduce_while - callback returns {:halt, result} or {:cont, new_acc}
+
+  # Iterate from beginning of stream
+  defp reduce_stream(stream_id, acc, fun) do
+    reduce_stream_from(stream_id, -1, acc, fun)
+  end
+
+  # Iterate from a specific offset (exclusive - starts AFTER the given offset)
+  defp reduce_stream_from(stream_id, from_int, acc, fun) do
+    do_reduce_stream({stream_id, from_int}, stream_id, acc, fun)
+  end
+
+  defp do_reduce_stream(anchor, stream_id, acc, fun) do
+    case :ets.next(@data_table, anchor) do
+      :"$end_of_table" ->
+        acc
+
+      {^stream_id, _} = key ->
+        case :ets.lookup(@data_table, key) do
+          [{^key, data, ts}] ->
+            case fun.({key, data, ts}, acc) do
+              {:halt, result} -> result
+              {:cont, new_acc} -> do_reduce_stream(key, stream_id, new_acc, fun)
+            end
+
+          [] ->
+            do_reduce_stream(key, stream_id, acc, fun)
+        end
+
+      _ ->
+        acc
+    end
+  end
+
+  # Delete entries while condition holds, returns {deleted_count, deleted_bytes}
+  defp delete_stream_while(stream_id, fun) do
+    do_delete_stream({stream_id, -1}, stream_id, fun, 0, 0)
+  end
+
+  defp do_delete_stream(anchor, stream_id, fun, count, bytes) do
+    case :ets.next(@data_table, anchor) do
+      :"$end_of_table" ->
+        {count, bytes}
+
+      {^stream_id, _} = key ->
+        case :ets.lookup(@data_table, key) do
+          [{^key, data, ts}] ->
+            if fun.({key, data, ts}) do
+              :ets.delete(@data_table, key)
+              # Keep same anchor since we deleted the key
+              do_delete_stream(anchor, stream_id, fun, count + 1, bytes + byte_size(data))
+            else
+              {count, bytes}
+            end
+
+          [] ->
+            do_delete_stream(key, stream_id, fun, count, bytes)
+        end
+
+      _ ->
+        {count, bytes}
     end
   end
 end
