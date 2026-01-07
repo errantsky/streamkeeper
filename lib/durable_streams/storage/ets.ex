@@ -138,12 +138,16 @@ defmodule DurableStreams.Storage.ETS do
 
   @doc """
   Lists all streams that have a retention policy configured.
+  Uses ETS match specification to filter at the ETS level.
   """
   @spec list_streams_with_retention() :: [Stream.t()]
   def list_streams_with_retention do
-    :ets.tab2list(@meta_table)
-    |> Enum.map(fn {_, stream} -> stream end)
-    |> Enum.filter(fn stream -> stream.retention_policy != nil end)
+    # Match spec: {pattern, guards, result}
+    # Pattern: {stream_id, stream_struct} where we bind stream to $1
+    # Guard: map_get(:retention_policy, $1) != nil
+    # Result: return the stream struct ($1)
+    match_spec = [{{:_, :"$1"}, [{:"/=", {:map_get, :retention_policy, :"$1"}, nil}], [:"$1"]}]
+    :ets.select(@meta_table, match_spec)
   end
 
   # Client API
